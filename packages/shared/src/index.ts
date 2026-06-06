@@ -5,3 +5,4 @@ export {
   type PageRequest,
   type PageResponse,
 } from './pagination.js';
+export { AuthSuccess, LoginBody, RegisterBody, Role, UserDto } from './auth.js';
