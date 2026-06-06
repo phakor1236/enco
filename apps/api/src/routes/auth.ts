@@ -1,6 +1,7 @@
 import { Router, type Response, type Router as RouterType, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { Prisma } from '@prisma/client';
+import { LoginBody, RegisterBody } from '@app/shared';
 
 import { prisma } from '../lib/db.js';
 import { AppError } from '../lib/errors.js';
@@ -14,7 +15,6 @@ import {
   rotateRefreshToken,
   verifyPassword,
 } from '../services/authService.js';
-import { LoginBody, RegisterBody } from '../schemas/auth.js';
 
 const REFRESH_COOKIE = 'vella_refresh';
 // Constant-time-ish dummy hash so login bcrypt-compare runs even when the email

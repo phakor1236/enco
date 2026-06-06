@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -9,14 +10,23 @@ beforeEach(() => {
   useAuthStore.setState({ user: null, accessToken: null, initialized: true });
 });
 
+function renderApp(): void {
+  const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <App />
+    </QueryClientProvider>,
+  );
+}
+
 describe('<App />', () => {
   it('renders the VELLA hello heading on the root route', () => {
-    render(<App />);
+    renderApp();
     expect(screen.getByRole('heading', { name: /Hello, VELLA/i })).toBeInTheDocument();
   });
 
   it('renders inside a <main> landmark', () => {
-    render(<App />);
+    renderApp();
     expect(screen.getByRole('main')).toBeInTheDocument();
   });
 });

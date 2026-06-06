@@ -5,6 +5,7 @@ import { RegisterBody } from '@app/shared';
 import { Button } from '../../components/Button.js';
 import { Field } from '../../components/Field.js';
 
+import { localizeAuthError } from './messages.js';
 import { authErrorCode, useRegister } from './useAuth.js';
 
 interface FormErrors {
@@ -41,14 +42,12 @@ export function RegisterPage(): JSX.Element {
       navigate('/');
     } catch (err) {
       const code = authErrorCode(err);
+      // EMAIL_TAKEN belongs on the email field specifically; other codes
+      // are form-level via the shared mapper.
       if (code === 'EMAIL_TAKEN') {
-        setErrors({ email: '此信箱已被註冊' });
-      } else if (code === 'RATE_LIMITED') {
-        setErrors({ form: '註冊嘗試次數過多，請改日再試' });
-      } else if (code === 'VALIDATION_ERROR') {
-        setErrors({ form: '輸入資料不符規範' });
+        setErrors({ email: localizeAuthError(code, '此信箱已被註冊') });
       } else {
-        setErrors({ form: '註冊失敗，請稍後再試' });
+        setErrors({ form: localizeAuthError(code, '註冊失敗，請稍後再試') });
       }
     }
   }

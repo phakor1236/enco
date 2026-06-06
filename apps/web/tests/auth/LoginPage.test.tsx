@@ -110,7 +110,7 @@ describe('<LoginPage />', () => {
     await user.click(screen.getByRole('button', { name: /登入/ }));
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(/嘗試次數過多/);
+      expect(screen.getByRole('alert')).toHaveTextContent(/操作次數過多/);
     });
   });
 });

@@ -4,8 +4,7 @@ import {
   extendZodWithOpenApi,
 } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-
-import { LoginBody, RegisterBody } from '../schemas/auth.js';
+import { LoginBody, RegisterBody } from '@app/shared';
 
 extendZodWithOpenApi(z);
 

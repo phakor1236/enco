@@ -5,6 +5,7 @@ import { LoginBody } from '@app/shared';
 import { Button } from '../../components/Button.js';
 import { Field } from '../../components/Field.js';
 
+import { localizeAuthError } from './messages.js';
 import { authErrorCode, useLogin } from './useAuth.js';
 
 interface FormErrors {
@@ -40,14 +41,7 @@ export function LoginPage(): JSX.Element {
       await login.mutateAsync(parsed.data);
       navigate('/');
     } catch (err) {
-      const code = authErrorCode(err);
-      if (code === 'INVALID_CREDENTIALS') {
-        setErrors({ form: '帳號或密碼錯誤' });
-      } else if (code === 'RATE_LIMITED') {
-        setErrors({ form: '登入嘗試次數過多，請稍後再試' });
-      } else {
-        setErrors({ form: '登入失敗，請稍後再試' });
-      }
+      setErrors({ form: localizeAuthError(authErrorCode(err), '登入失敗，請稍後再試') });
     }
   }
 

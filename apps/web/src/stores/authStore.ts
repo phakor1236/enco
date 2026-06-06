@@ -1,12 +1,8 @@
 import { create } from 'zustand';
+import type { Role, UserDto } from '@app/shared';
 
-export type Role = 'CUSTOMER' | 'ADMIN' | 'SUPER_ADMIN';
-
-export interface AuthUser {
-  id: string;
-  email: string;
-  role: Role;
-}
+export type { Role };
+export type AuthUser = UserDto;
 
 export interface AuthState {
   user: AuthUser | null;
