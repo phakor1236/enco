@@ -16,6 +16,10 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
+    "db:generate": "pnpm -F @app/api db:generate",
+    "db:migrate": "pnpm -F @app/api db:migrate",
+    "db:migrate:dev": "pnpm -F @app/api db:migrate:dev",
+    "db:seed": "pnpm -F @app/api db:seed",
     "prepare": "husky"
   },
   "devDependencies": {
