@@ -8,6 +8,15 @@ export {
 } from './pagination.js';
 export { AuthSuccess, LoginBody, RegisterBody, Role, UserDto } from './auth.js';
 export {
+  AddCartItemBody,
+  CART_LIMITS,
+  CartDtoSchema,
+  CartItemDtoSchema,
+  UpdateCartItemBody,
+  type CartDto,
+  type CartItemDto,
+} from './cart.js';
+export {
   CategoryDtoSchema,
   ProductImageDtoSchema,
   VariantDtoSchema,

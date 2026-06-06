@@ -26,6 +26,12 @@ export const ErrorCodes = {
 
   // ---- Phase 2 Catalog -----------------------------------------------------
   PRODUCT_NOT_FOUND: 'PRODUCT_NOT_FOUND',
+
+  // ---- Phase 3 Cart --------------------------------------------------------
+  CART_ITEM_NOT_FOUND: 'CART_ITEM_NOT_FOUND',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
+  SKU_INACTIVE: 'SKU_INACTIVE',
+  SKU_NOT_FOUND: 'SKU_NOT_FOUND',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

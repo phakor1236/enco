@@ -49,6 +49,31 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
 };
 
 /**
+ * Optional auth: if a valid Bearer token is present, populate req.user;
+ * if absent or malformed, continue with req.user undefined. Used by routes
+ * (e.g. /cart) that serve both logged-in and guest callers — the handler
+ * branches on req.user itself.
+ *
+ * Distinct from requireAuth: never throws on absent/bad token, only on a
+ * malformed `Bearer` prefix that suggests a buggy client.
+ */
+export const optionalAuth: RequestHandler = (req, _res, next) => {
+  const header = req.headers.authorization;
+  if (!header) return next();
+  if (!header.startsWith('Bearer ')) return next();
+  const token = header.slice('Bearer '.length).trim();
+  if (!token) return next();
+  try {
+    const payload = verifyAccessToken(token);
+    req.user = { id: payload.sub, role: payload.role };
+  } catch {
+    // Expired or invalid token: treat as guest. FE single-flight refresh
+    // (apiClient interceptor) will retry with a fresh token if available.
+  }
+  next();
+};
+
+/**
  * Gate a route to one of the allowed roles. Must be chained AFTER requireAuth.
  *   router.post('/products', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), handler)
  *
