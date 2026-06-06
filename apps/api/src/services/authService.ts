@@ -4,10 +4,10 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 // eslint-disable-next-line import/default
 import jwt from 'jsonwebtoken';
-import type { Prisma, PrismaClient, Role } from '@prisma/client';
+import type { Role } from '@prisma/client';
 
 import { AppError } from '../lib/errors.js';
-import { prisma } from '../lib/db.js';
+import { prisma, type DbClient } from '../lib/db.js';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -50,8 +50,7 @@ function getJwtSecret(): string {
   return s;
 }
 
-/** Prisma client OR an in-flight TransactionClient. Services accept either. */
-export type DbClient = PrismaClient | Prisma.TransactionClient;
+export type { DbClient };
 
 // ---------------------------------------------------------------------------
 // Passwords

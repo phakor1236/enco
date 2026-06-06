@@ -1,4 +1,4 @@
-import type { Prisma as PrismaTypes, PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { ProductStatus } from '@prisma/client';
 import type {
   CategoryDto,
@@ -7,16 +7,7 @@ import type {
   ProductListResponse,
 } from '@app/shared';
 
-import { prisma } from '../lib/db.js';
-
-/**
- * Service-layer client handle. Accepting either a base PrismaClient or a
- * TransactionClient mirrors authService.DbClient — keeps these functions
- * usable inside a Phase 4 checkout `prisma.$transaction(...)` and makes
- * tests injectable (the N+1 guard test below relies on this to swap in
- * an event-logging client).
- */
-export type DbClient = PrismaClient | PrismaTypes.TransactionClient;
+import { prisma, type DbClient } from '../lib/db.js';
 
 // Storefront endpoints only ever surface ACTIVE products. DRAFT is admin-only
 // (T6.3 will reuse the schema with a wider filter); ARCHIVED is for orphan
@@ -35,14 +26,14 @@ export interface ListProductsOpts {
 // JSON as their internal shape, not "29.00", and would break FE consumers.
 // ---------------------------------------------------------------------------
 
-type ProductListRow = PrismaTypes.ProductGetPayload<{
+type ProductListRow = Prisma.ProductGetPayload<{
   include: {
     category: { select: { id: true; name: true; slug: true } };
     images: { orderBy: { sort: 'asc' }; take: 1 };
   };
 }>;
 
-type ProductDetailRow = PrismaTypes.ProductGetPayload<{
+type ProductDetailRow = Prisma.ProductGetPayload<{
   include: {
     category: { select: { id: true; name: true; slug: true } };
     images: { orderBy: { sort: 'asc' } };
@@ -125,7 +116,7 @@ export async function listProducts(
 ): Promise<ProductListResponse> {
   const { categorySlug, limit, cursor } = opts;
 
-  const where: PrismaTypes.ProductWhereInput = {
+  const where: Prisma.ProductWhereInput = {
     status: STOREFRONT_STATUS,
     ...(categorySlug ? { category: { slug: categorySlug } } : {}),
   };

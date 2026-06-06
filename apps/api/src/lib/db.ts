@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { PrismaClient } from '@prisma/client';
 
 /**
@@ -18,3 +19,12 @@ export const prisma: PrismaClient =
 if (process.env.NODE_ENV !== 'production') {
   globalThis.__prisma = prisma;
 }
+
+/**
+ * Service-layer handle that accepts either the base PrismaClient or a
+ * TransactionClient. Services use this so callers can pass `prisma` for
+ * single-shot ops or a `tx` from `prisma.$transaction(...)` for atomic
+ * multi-step flows (checkout, cart merge, refresh rotation). Centralized
+ * here so every service imports the same type.
+ */
+export type DbClient = PrismaClient | Prisma.TransactionClient;
