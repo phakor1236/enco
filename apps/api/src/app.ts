@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 // eslint-disable-next-line import/default
 import swaggerUi from 'swagger-ui-express';
+import { ErrorCodes } from '@app/shared';
 
 import { AppError } from './lib/errors.js';
 import { logger } from './lib/logger.js';
@@ -58,7 +59,7 @@ export function createApp(): Express {
 
   // 404 — keep shape consistent with ErrorResponse via AppError + errorMiddleware
   app.use((_req, _res, next) => {
-    next(new AppError('NOT_FOUND', 'Resource not found', 404));
+    next(new AppError(ErrorCodes.NOT_FOUND, 'Resource not found', 404));
   });
 
   app.use(errorMiddleware);

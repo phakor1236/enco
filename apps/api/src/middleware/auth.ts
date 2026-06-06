@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express';
 import type { Role } from '@prisma/client';
+import { ErrorCodes } from '@app/shared';
 
 import { AppError } from '../lib/errors.js';
 import { verifyAccessToken } from '../services/authService.js';
@@ -28,11 +29,15 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
   try {
     const header = req.headers.authorization;
     if (!header || !header.startsWith('Bearer ')) {
-      throw new AppError('UNAUTHENTICATED', 'Missing or malformed Authorization header', 401);
+      throw new AppError(
+        ErrorCodes.UNAUTHENTICATED,
+        'Missing or malformed Authorization header',
+        401,
+      );
     }
     const token = header.slice('Bearer '.length).trim();
     if (!token) {
-      throw new AppError('UNAUTHENTICATED', 'Empty bearer token', 401);
+      throw new AppError(ErrorCodes.UNAUTHENTICATED, 'Empty bearer token', 401);
     }
 
     const payload = verifyAccessToken(token);
@@ -56,11 +61,15 @@ export function requireRole(...allowed: Role[]): RequestHandler {
   }
   return (req, _res, next) => {
     if (!req.user) {
-      return next(new AppError('UNAUTHENTICATED', 'Auth required', 401));
+      return next(new AppError(ErrorCodes.UNAUTHENTICATED, 'Auth required', 401));
     }
     if (!allowed.includes(req.user.role)) {
       return next(
-        new AppError('FORBIDDEN', `Role '${req.user.role}' is not permitted on this route`, 403),
+        new AppError(
+          ErrorCodes.FORBIDDEN,
+          `Role '${req.user.role}' is not permitted on this route`,
+          403,
+        ),
       );
     }
     next();

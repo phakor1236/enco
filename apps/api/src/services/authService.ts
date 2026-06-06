@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 // eslint-disable-next-line import/default
 import jwt from 'jsonwebtoken';
 import type { Role } from '@prisma/client';
+import { ErrorCodes } from '@app/shared';
 
 import { AppError } from '../lib/errors.js';
 import { prisma, type DbClient } from '../lib/db.js';
@@ -18,17 +19,10 @@ const GRACE_WINDOW_SECONDS = 10; // SPEC §9 — network-retry tolerance
 const JWT_ALGORITHM = 'HS256' as const;
 const JWT_SECRET_MIN_LENGTH = 48; // ~256-bit entropy in base64url
 
-/**
- * Error code constants emitted by this service. Centralized so route handlers
- * + FE can import the same values, never re-typing string literals.
- */
-export const AuthErrorCodes = {
-  INVALID_TOKEN: 'INVALID_TOKEN',
-  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
-  TOKEN_REUSED: 'TOKEN_REUSED',
-  TOKEN_RACED: 'TOKEN_RACED',
-  CONFIG_ERROR: 'CONFIG_ERROR',
-} as const;
+// AuthErrorCodes (legacy local enum) was replaced by the shared ErrorCodes
+// module. Re-export under the old name for any consumer that still imports
+// it (FE auth feature) until those imports migrate too.
+export { ErrorCodes as AuthErrorCodes };
 
 function getAccessTtlSeconds(): number {
   return Number(process.env.JWT_ACCESS_TTL_SECONDS ?? 900);
@@ -42,7 +36,7 @@ function getJwtSecret(): string {
   const s = process.env.JWT_SECRET;
   if (!s || s.length < JWT_SECRET_MIN_LENGTH) {
     throw new AppError(
-      AuthErrorCodes.CONFIG_ERROR,
+      ErrorCodes.CONFIG_ERROR,
       `JWT_SECRET missing or shorter than ${JWT_SECRET_MIN_LENGTH} chars`,
       500,
     );
@@ -91,9 +85,9 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
     }) as AccessTokenPayload;
   } catch (e) {
     if (e instanceof jwt.TokenExpiredError) {
-      throw new AppError(AuthErrorCodes.TOKEN_EXPIRED, 'Access token expired', 401);
+      throw new AppError(ErrorCodes.TOKEN_EXPIRED, 'Access token expired', 401);
     }
-    throw new AppError(AuthErrorCodes.INVALID_TOKEN, 'Access token invalid', 401);
+    throw new AppError(ErrorCodes.INVALID_TOKEN, 'Access token invalid', 401);
   }
 }
 
@@ -191,11 +185,11 @@ export async function rotateRefreshToken(
   });
 
   if (!existing) {
-    throw new AppError(AuthErrorCodes.INVALID_TOKEN, 'Refresh token not found', 401);
+    throw new AppError(ErrorCodes.INVALID_TOKEN, 'Refresh token not found', 401);
   }
 
   if (existing.expiresAt.getTime() <= Date.now()) {
-    throw new AppError(AuthErrorCodes.TOKEN_EXPIRED, 'Refresh token expired', 401);
+    throw new AppError(ErrorCodes.TOKEN_EXPIRED, 'Refresh token expired', 401);
   }
 
   if (existing.revokedAt) {
@@ -217,11 +211,7 @@ export async function rotateRefreshToken(
         data: { revokedAt: new Date() },
       });
       if (revoked.count === 0) {
-        throw new AppError(
-          AuthErrorCodes.TOKEN_RACED,
-          'Concurrent rotation during grace; retry',
-          409,
-        );
+        throw new AppError(ErrorCodes.TOKEN_RACED, 'Concurrent rotation during grace; retry', 409);
       }
       const refresh = await issueRefreshToken(db, existing.userId, ctx, {
         familyId: existing.familyId,
@@ -242,7 +232,7 @@ export async function rotateRefreshToken(
       where: { familyId: existing.familyId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
-    throw new AppError(AuthErrorCodes.TOKEN_REUSED, 'Refresh token reuse detected', 401);
+    throw new AppError(ErrorCodes.TOKEN_REUSED, 'Refresh token reuse detected', 401);
   }
 
   // Happy path — optimistic lock via conditional updateMany. If a concurrent
@@ -254,7 +244,7 @@ export async function rotateRefreshToken(
   });
   if (revoked.count === 0) {
     throw new AppError(
-      AuthErrorCodes.TOKEN_RACED,
+      ErrorCodes.TOKEN_RACED,
       'Concurrent rotation detected; retry with current token',
       409,
     );

@@ -1,4 +1,5 @@
 export { ErrorResponseSchema, type ErrorResponse } from './errors.js';
+export { ErrorCodes, type ErrorCode } from './errorCodes.js';
 export {
   PageRequestSchema,
   PageResponseSchema,

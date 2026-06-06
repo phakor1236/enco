@@ -1,13 +1,12 @@
 import { Router, type Response, type Router as RouterType, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { Prisma } from '@prisma/client';
-import { LoginBody, RegisterBody } from '@app/shared';
+import { ErrorCodes, LoginBody, RegisterBody } from '@app/shared';
 
 import { prisma } from '../lib/db.js';
 import { AppError } from '../lib/errors.js';
 import { validateBody } from '../middleware/validate.js';
 import {
-  AuthErrorCodes,
   hashPassword,
   issueAccessToken,
   issueRefreshToken,
@@ -106,7 +105,7 @@ authRouter.post('/register', registerLimit, validateBody(RegisterBody), async (r
       refresh = result.refresh;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        throw new AppError('EMAIL_TAKEN', 'Email already registered', 409);
+        throw new AppError(ErrorCodes.EMAIL_TAKEN, 'Email already registered', 409);
       }
       throw e;
     }
@@ -130,7 +129,7 @@ authRouter.post('/login', loginLimit, validateBody(LoginBody), async (req, res, 
     const ok = await verifyPassword(password, hashToCheck);
 
     if (!user || !ok) {
-      throw new AppError('INVALID_CREDENTIALS', 'Email or password incorrect', 401);
+      throw new AppError(ErrorCodes.INVALID_CREDENTIALS, 'Email or password incorrect', 401);
     }
 
     // TODO(P3): wrap below in prisma.$transaction and call
@@ -157,7 +156,7 @@ authRouter.post('/refresh', sessionLimit, async (req, res, next) => {
   try {
     const plain: unknown = req.cookies?.[REFRESH_COOKIE];
     if (typeof plain !== 'string' || plain.length === 0) {
-      throw new AppError(AuthErrorCodes.INVALID_TOKEN, 'Refresh cookie missing', 401);
+      throw new AppError(ErrorCodes.INVALID_TOKEN, 'Refresh cookie missing', 401);
     }
 
     const result = await prisma.$transaction(async (tx) => {

@@ -1,5 +1,5 @@
 import { Router, type Router as RouterType } from 'express';
-import { ProductListQuerySchema } from '@app/shared';
+import { ErrorCodes, ProductListQuerySchema } from '@app/shared';
 
 import { AppError } from '../lib/errors.js';
 import { validateQuery } from '../middleware/validate.js';
@@ -46,11 +46,15 @@ productsRouter.get('/:slug', async (req, res, next) => {
     // Defense in depth — slug already pattern-checked by router but reject
     // empty / over-long input before hitting the DB.
     if (!slug || slug.length > 80) {
-      throw new AppError('VALIDATION_ERROR', 'Invalid slug', 400);
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Invalid slug', 400);
     }
     const product = await getProductBySlug(slug);
     if (!product) {
-      throw new AppError('PRODUCT_NOT_FOUND', `No active product with slug "${slug}"`, 404);
+      throw new AppError(
+        ErrorCodes.PRODUCT_NOT_FOUND,
+        `No active product with slug "${slug}"`,
+        404,
+      );
     }
     res.json(product);
   } catch (e) {
