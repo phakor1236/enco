@@ -353,6 +353,9 @@ async function upsertVariantAndSkus(
   basePrice: number,
   spec: ProductSpec,
 ): Promise<void> {
+  // Spec-evolution caveat: renaming a variant axis or removing an option
+  // creates an orphan row that this seed won't auto-prune (SKU FK Restrict
+  // prevents safe automatic deletion). Both require manual DB cleanup.
   const variant = await prisma.variant.upsert({
     where: { productId_name: { productId, name: spec.variant.name } },
     update: {},
