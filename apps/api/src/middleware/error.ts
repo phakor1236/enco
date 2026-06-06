@@ -5,7 +5,9 @@ import { AppError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 
 export const errorMiddleware: ErrorRequestHandler = (err, _req, res, _next) => {
-  const isDev = process.env.NODE_ENV !== 'production';
+  // Stack-leak guard: only 'development' opens the door. 'test' and any
+  // unknown NODE_ENV value default to the production-safe payload.
+  const isDev = process.env.NODE_ENV === 'development';
 
   if (err instanceof AppError) {
     const body: ErrorResponse = {

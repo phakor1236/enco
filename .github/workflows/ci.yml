@@ -79,6 +79,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -F @app/api db:generate
+      # No-op today (Phase 0 has no models). Becomes load-bearing in T1.1
+      # when User schema lands — placed here now so the order is set.
+      - run: pnpm -F @app/api db:migrate
       - run: pnpm test
 
   build:

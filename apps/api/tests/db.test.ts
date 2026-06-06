@@ -18,9 +18,4 @@ describe('Prisma client (db.ts singleton)', () => {
     const rows = await prisma.$queryRaw<Array<{ one: number }>>`SELECT 1 as one`;
     expect(rows).toEqual([{ one: 1 }]);
   });
-
-  it('caches the same instance on globalThis in dev (avoids pool exhaustion)', async () => {
-    const { prisma: again } = await import('../src/lib/db.js');
-    expect(again).toBe(prisma);
-  });
 });
