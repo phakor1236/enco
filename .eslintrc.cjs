@@ -31,6 +31,9 @@ module.exports = {
       { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
     ],
     'import/no-unresolved': 'off',
+    // express idiom uses default-import + .json()/.urlencoded() — allow it
+    'import/no-named-as-default-member': 'off',
+    'import/no-named-as-default': 'off',
     'import/order': [
       'warn',
       {
