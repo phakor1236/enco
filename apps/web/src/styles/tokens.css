@@ -1,0 +1,74 @@
+/* VELLA design tokens — see SPEC.md §13.2 */
+@import 'tailwindcss';
+
+@theme {
+  /* Surfaces */
+  --color-paper: #f4f1ea;
+  --color-paper-2: #efeae1;
+  --color-surface: #ffffff;
+  --color-surface-2: #fbf9f5;
+  --color-ink: #17151a;
+  --color-ink-2: #423e48;
+  --color-ink-soft: #726c78;
+  --color-ink-faint: #a39da9;
+  --color-line: #e6e0d6;
+  --color-line-2: #ede9e2;
+
+  /* Brand */
+  --color-primary: #5b30e6;
+  --color-primary-press: #4a23c9;
+  --color-primary-tint: #ece7ff;
+  --color-primary-tint-2: #dcd3ff;
+  --color-on-primary: #ffffff;
+  --color-accent: #ff5c8a;
+  --color-accent-tint: #ffe3ec;
+
+  /* Semantic */
+  --color-success: #15924e;
+  --color-success-tint: #dcf3e6;
+  --color-warning: #e0820b;
+  --color-warning-tint: #fbeacf;
+  --color-danger: #e0344b;
+  --color-danger-tint: #fbe0e4;
+  --color-info: #2f6fe0;
+  --color-info-tint: #dee9fc;
+
+  /* Order status */
+  --color-st-pending: #8a7cf0;
+  --color-st-paid: #e0820b;
+  --color-st-shipped: #2f6fe0;
+  --color-st-done: #15924e;
+  --color-st-failed: #e0344b;
+  --color-st-refunded: #726c78;
+
+  /* Radius */
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+
+  /* Typography */
+  --font-display: 'Bricolage Grotesque', 'Noto Sans TC', system-ui, sans-serif;
+  --font-body: 'Noto Sans TC', 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-num: 'Bricolage Grotesque', 'Noto Sans TC', system-ui, sans-serif;
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--color-primary-tint-2);
+    color: var(--color-ink);
+  }
+}
