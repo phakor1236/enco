@@ -11,6 +11,8 @@ servers:
 tags:
   - name: Auth
     description: Registration + session management
+  - name: Catalog
+    description: Public categories and products
 components:
   schemas:
     ErrorResponse:
@@ -88,6 +90,372 @@ components:
       required:
         - email
         - password
+    CategoryDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        parentId:
+          type: string
+          nullable: true
+      required:
+        - id
+        - name
+        - slug
+        - parentId
+    CategoryListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryDto"
+      required:
+        - items
+    ProductImageDto:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          format: uri
+        alt:
+          type: string
+          nullable: true
+        sort:
+          type: integer
+      required:
+        - id
+        - url
+        - alt
+        - sort
+    VariantOptionDto:
+      type: object
+      properties:
+        id:
+          type: string
+        value:
+          type: string
+        sort:
+          type: integer
+      required:
+        - id
+        - value
+        - sort
+    VariantDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              value:
+                type: string
+              sort:
+                type: integer
+            required:
+              - id
+              - value
+              - sort
+      required:
+        - id
+        - name
+        - options
+    SkuDto:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        price:
+          type: string
+          pattern: ^-?\d+(\.\d{1,2})?$
+        stock:
+          type: integer
+          minimum: 0
+        optionCombination:
+          type: object
+          additionalProperties:
+            type: string
+        status:
+          type: string
+          enum: &a2
+            - ACTIVE
+            - ARCHIVED
+      required:
+        - id
+        - code
+        - price
+        - stock
+        - optionCombination
+        - status
+    ProductListItemDto:
+      type: object
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        basePrice:
+          type: string
+          pattern: ^-?\d+(\.\d{1,2})?$
+        status:
+          type: string
+          enum: &a1
+            - DRAFT
+            - ACTIVE
+            - ARCHIVED
+        category:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            slug:
+              type: string
+          required:
+            - id
+            - name
+            - slug
+        primaryImage:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            url:
+              type: string
+              format: uri
+            alt:
+              type: string
+              nullable: true
+            sort:
+              type: integer
+          required:
+            - id
+            - url
+            - alt
+            - sort
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - basePrice
+        - status
+        - category
+        - primaryImage
+        - createdAt
+    ProductDetailDto:
+      type: object
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        basePrice:
+          type: string
+          pattern: ^-?\d+(\.\d{1,2})?$
+        status:
+          type: string
+          enum: *a1
+        category:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            slug:
+              type: string
+          required:
+            - id
+            - name
+            - slug
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              url:
+                type: string
+                format: uri
+              alt:
+                type: string
+                nullable: true
+              sort:
+                type: integer
+            required:
+              - id
+              - url
+              - alt
+              - sort
+        variants:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    value:
+                      type: string
+                    sort:
+                      type: integer
+                  required:
+                    - id
+                    - value
+                    - sort
+            required:
+              - id
+              - name
+              - options
+        skus:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              code:
+                type: string
+              price:
+                type: string
+                pattern: ^-?\d+(\.\d{1,2})?$
+              stock:
+                type: integer
+                minimum: 0
+              optionCombination:
+                type: object
+                additionalProperties:
+                  type: string
+              status:
+                type: string
+                enum: *a2
+            required:
+              - id
+              - code
+              - price
+              - stock
+              - optionCombination
+              - status
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - basePrice
+        - status
+        - category
+        - images
+        - variants
+        - skus
+        - createdAt
+    ProductListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              slug:
+                type: string
+              name:
+                type: string
+              basePrice:
+                type: string
+                pattern: ^-?\d+(\.\d{1,2})?$
+              status:
+                type: string
+                enum: *a1
+              category:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  slug:
+                    type: string
+                required:
+                  - id
+                  - name
+                  - slug
+              primaryImage:
+                type: object
+                nullable: true
+                properties:
+                  id:
+                    type: string
+                  url:
+                    type: string
+                    format: uri
+                  alt:
+                    type: string
+                    nullable: true
+                  sort:
+                    type: integer
+                required:
+                  - id
+                  - url
+                  - alt
+                  - sort
+              createdAt:
+                type: string
+                format: date-time
+            required:
+              - id
+              - slug
+              - name
+              - basePrice
+              - status
+              - category
+              - primaryImage
+              - createdAt
+        nextCursor:
+          type: string
+          nullable: true
+      required:
+        - items
+        - nextCursor
   parameters: {}
 paths:
   /api/auth/register:
@@ -194,6 +562,103 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/categories:
+    get:
+      tags:
+        - Catalog
+      summary: List all product categories (flat, sorted by name)
+      responses:
+        "200":
+          description: All categories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryListResponse"
+  /api/products:
+    get:
+      tags:
+        - Catalog
+      summary: List ACTIVE products with cursor pagination
+      description: Filterable by category slug. `cursor` echoes the previous
+        response's `nextCursor`. A null nextCursor means the last page has been
+        returned. A cursor pointing at a since-deleted product yields an empty
+        page (not an error).
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+            description: Restrict results to the given category slug
+            example: footwear
+          required: false
+          name: categorySlug
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 12
+            description: Page size (1–50)
+            example: 12
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+            description: Opaque cursor from the previous response
+          required: false
+          name: cursor
+          in: query
+      responses:
+        "200":
+          description: Paginated product list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/products/{slug}:
+    get:
+      tags:
+        - Catalog
+      summary: Get full product detail by slug
+      description: Includes all images, variants, options, and ACTIVE SKUs. DRAFT or
+        ARCHIVED products return 404 even when the slug matches a real row.
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+            example: classic-crew-tee
+          required: true
+          name: slug
+          in: path
+      responses:
+        "200":
+          description: Product detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductDetailDto"
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: PRODUCT_NOT_FOUND
           content:
             application/json:
               schema:

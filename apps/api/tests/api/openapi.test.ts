@@ -24,6 +24,19 @@ describe('OpenAPI document', () => {
     expect(paths).toContain('/api/auth/logout');
   });
 
+  it('declares the 3 catalog endpoints (T2.4)', () => {
+    const doc = buildOpenApiDocument();
+    const paths = Object.keys(doc.paths ?? {});
+    expect(paths).toContain('/api/categories');
+    expect(paths).toContain('/api/products');
+    expect(paths).toContain('/api/products/{slug}');
+
+    const list = doc.paths?.['/api/products']?.get;
+    expect(Object.keys(list?.responses ?? {})).toEqual(expect.arrayContaining(['200', '400']));
+    const detail = doc.paths?.['/api/products/{slug}']?.get;
+    expect(Object.keys(detail?.responses ?? {})).toEqual(expect.arrayContaining(['200', '404']));
+  });
+
   it('lists realistic response codes per endpoint', () => {
     const doc = buildOpenApiDocument();
     const register = doc.paths?.['/api/auth/register']?.post;
@@ -52,6 +65,15 @@ describe('OpenAPI document', () => {
         'AuthSuccess',
         'RegisterBody',
         'LoginBody',
+        'CategoryDto',
+        'CategoryListResponse',
+        'ProductImageDto',
+        'VariantDto',
+        'VariantOptionDto',
+        'SkuDto',
+        'ProductListItemDto',
+        'ProductDetailDto',
+        'ProductListResponse',
       ]),
     );
   });

@@ -4,7 +4,18 @@ import {
   extendZodWithOpenApi,
 } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { LoginBody, RegisterBody } from '@app/shared';
+import {
+  CategoryDtoSchema,
+  LoginBody,
+  ProductDetailDtoSchema,
+  ProductImageDtoSchema,
+  ProductListItemDtoSchema,
+  ProductListResponseSchema,
+  RegisterBody,
+  SkuDtoSchema,
+  VariantDtoSchema,
+  VariantOptionDtoSchema,
+} from '@app/shared';
 
 extendZodWithOpenApi(z);
 
@@ -40,6 +51,20 @@ const AuthSuccess = z
 const RegisterBodyOpen = RegisterBody.openapi('RegisterBody');
 const LoginBodyOpen = LoginBody.openapi('LoginBody');
 
+// Catalog DTOs — reuse the shared Zod schemas so doc and runtime contract
+// stay in lockstep. The drift test in openapi.test.ts catches any miss.
+const CategoryDto = CategoryDtoSchema.openapi('CategoryDto');
+const CategoryListResponse = z
+  .object({ items: z.array(CategoryDto) })
+  .openapi('CategoryListResponse');
+const ProductImageDto = ProductImageDtoSchema.openapi('ProductImageDto');
+const VariantOptionDto = VariantOptionDtoSchema.openapi('VariantOptionDto');
+const VariantDto = VariantDtoSchema.openapi('VariantDto');
+const SkuDto = SkuDtoSchema.openapi('SkuDto');
+const ProductListItemDto = ProductListItemDtoSchema.openapi('ProductListItemDto');
+const ProductDetailDto = ProductDetailDtoSchema.openapi('ProductDetailDto');
+const ProductListResponse = ProductListResponseSchema.openapi('ProductListResponse');
+
 // ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
@@ -52,6 +77,15 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV3['generateD
   registry.register('AuthSuccess', AuthSuccess);
   registry.register('RegisterBody', RegisterBodyOpen);
   registry.register('LoginBody', LoginBodyOpen);
+  registry.register('CategoryDto', CategoryDto);
+  registry.register('CategoryListResponse', CategoryListResponse);
+  registry.register('ProductImageDto', ProductImageDto);
+  registry.register('VariantOptionDto', VariantOptionDto);
+  registry.register('VariantDto', VariantDto);
+  registry.register('SkuDto', SkuDto);
+  registry.register('ProductListItemDto', ProductListItemDto);
+  registry.register('ProductDetailDto', ProductDetailDto);
+  registry.register('ProductListResponse', ProductListResponse);
 
   const errorResponse = (description: string) => ({
     description,
@@ -114,6 +148,85 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV3['generateD
     },
   });
 
+  // -------------------------------------------------------------------------
+  // Catalog (T2.4)
+  // -------------------------------------------------------------------------
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/categories',
+    tags: ['Catalog'],
+    summary: 'List all product categories (flat, sorted by name)',
+    responses: {
+      200: {
+        description: 'All categories',
+        content: { 'application/json': { schema: CategoryListResponse } },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/products',
+    tags: ['Catalog'],
+    summary: 'List ACTIVE products with cursor pagination',
+    description:
+      "Filterable by category slug. `cursor` echoes the previous response's " +
+      '`nextCursor`. A null nextCursor means the last page has been returned. ' +
+      'A cursor pointing at a since-deleted product yields an empty page (not an error).',
+    request: {
+      query: z.object({
+        categorySlug: z.string().min(1).max(80).optional().openapi({
+          description: 'Restrict results to the given category slug',
+          example: 'footwear',
+        }),
+        limit: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .default(12)
+          .openapi({ description: 'Page size (1–50)', example: 12 }),
+        cursor: z
+          .string()
+          .min(1)
+          .max(64)
+          .optional()
+          .openapi({ description: 'Opaque cursor from the previous response' }),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Paginated product list',
+        content: { 'application/json': { schema: ProductListResponse } },
+      },
+      400: errorResponse('VALIDATION_ERROR'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/products/{slug}',
+    tags: ['Catalog'],
+    summary: 'Get full product detail by slug',
+    description:
+      'Includes all images, variants, options, and ACTIVE SKUs. DRAFT or ' +
+      'ARCHIVED products return 404 even when the slug matches a real row.',
+    request: {
+      params: z.object({
+        slug: z.string().min(1).max(80).openapi({ example: 'classic-crew-tee' }),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Product detail',
+        content: { 'application/json': { schema: ProductDetailDto } },
+      },
+      400: errorResponse('VALIDATION_ERROR'),
+      404: errorResponse('PRODUCT_NOT_FOUND'),
+    },
+  });
+
   registry.registerPath({
     method: 'post',
     path: '/api/auth/logout',
@@ -137,6 +250,9 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV3['generateD
         'catalog, cart, checkout, orders and admin are added in later slices.',
     },
     servers: [{ url: 'http://localhost:4000', description: 'Local dev' }],
-    tags: [{ name: 'Auth', description: 'Registration + session management' }],
+    tags: [
+      { name: 'Auth', description: 'Registration + session management' },
+      { name: 'Catalog', description: 'Public categories and products' },
+    ],
   });
 }
