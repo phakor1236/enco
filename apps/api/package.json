@@ -23,6 +23,7 @@
   "dependencies": {
     "@app/shared": "workspace:*",
     "@prisma/client": "^6.1.0",
+    "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^7.4.1",
@@ -32,6 +33,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "prisma": "^6.1.0",
     "@types/node": "^22.10.2",
