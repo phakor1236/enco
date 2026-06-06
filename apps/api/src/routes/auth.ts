@@ -1,4 +1,4 @@
-import { Router, type Router as RouterType, type RequestHandler } from 'express';
+import { Router, type Response, type Router as RouterType, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { Prisma } from '@prisma/client';
 
@@ -37,6 +37,10 @@ function refreshCookieOptions(): {
   };
 }
 
+function setRefreshCookie(res: Response, plain: string): void {
+  res.cookie(REFRESH_COOKIE, plain, refreshCookieOptions());
+}
+
 // ---------------------------------------------------------------------------
 // Rate limiters (SPEC §9 — login 5/min/IP, register 3/day/IP)
 // ---------------------------------------------------------------------------
@@ -62,6 +66,14 @@ const loginLimit = makeLimiter(
 const registerLimit = makeLimiter(
   24 * 60 * 60 * 1000,
   Number(process.env.RATE_LIMIT_REGISTER_PER_DAY_PER_IP ?? 3),
+  'RATE_LIMITED',
+);
+
+// Refresh + logout get a generous per-IP limit. Token entropy makes brute force
+// pointless; this just caps DDoS amplification from a single source.
+const sessionLimit = makeLimiter(
+  60_000,
+  Number(process.env.RATE_LIMIT_SESSION_PER_MIN ?? 60),
   'RATE_LIMITED',
 );
 
@@ -99,7 +111,7 @@ authRouter.post('/register', registerLimit, validateBody(RegisterBody), async (r
     }
 
     const accessToken = issueAccessToken(user);
-    res.cookie(REFRESH_COOKIE, refresh.plain, refreshCookieOptions());
+    setRefreshCookie(res, refresh.plain);
     res.status(201).json({
       user: { id: user.id, email: user.email, role: user.role },
       accessToken,
@@ -126,7 +138,7 @@ authRouter.post('/login', loginLimit, validateBody(LoginBody), async (req, res, 
     });
     const accessToken = issueAccessToken(user);
 
-    res.cookie(REFRESH_COOKIE, refresh.plain, refreshCookieOptions());
+    setRefreshCookie(res, refresh.plain);
     res.json({
       user: { id: user.id, email: user.email, role: user.role },
       accessToken,
@@ -136,7 +148,7 @@ authRouter.post('/login', loginLimit, validateBody(LoginBody), async (req, res, 
   }
 });
 
-authRouter.post('/refresh', async (req, res, next) => {
+authRouter.post('/refresh', sessionLimit, async (req, res, next) => {
   try {
     const plain: unknown = req.cookies?.[REFRESH_COOKIE];
     if (typeof plain !== 'string' || plain.length === 0) {
@@ -160,7 +172,7 @@ authRouter.post('/refresh', async (req, res, next) => {
   }
 });
 
-authRouter.post('/logout', async (req, res, next) => {
+authRouter.post('/logout', sessionLimit, async (req, res, next) => {
   try {
     const plain: unknown = req.cookies?.[REFRESH_COOKIE];
     if (typeof plain === 'string' && plain.length > 0) {

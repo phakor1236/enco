@@ -16,6 +16,11 @@ export function createApp(): Express {
   // Trust X-Forwarded-For so req.ip is accurate behind a reverse proxy
   // (Vercel / Fly). Tests also use this to simulate distinct client IPs
   // when exercising per-IP rate limits.
+  //
+  // SECURITY: this assumes a trusted upstream proxy (Vercel rewrites in front
+  // of the Fly API per SPEC §8). If the API is ever exposed *directly* on the
+  // public internet, per-IP rate limits become spoofable via forged
+  // X-Forwarded-For — drop the setting or pin to the proxy's IP.
   app.set('trust proxy', 1);
 
   app.use(helmet());
