@@ -15,6 +15,20 @@ import { prisma } from '../lib/db.js';
 
 const BCRYPT_ROUNDS = 12; // SPEC §9 — bcrypt cost ≥ 12
 const GRACE_WINDOW_SECONDS = 10; // SPEC §9 — network-retry tolerance
+const JWT_ALGORITHM = 'HS256' as const;
+const JWT_SECRET_MIN_LENGTH = 48; // ~256-bit entropy in base64url
+
+/**
+ * Error code constants emitted by this service. Centralized so route handlers
+ * + FE can import the same values, never re-typing string literals.
+ */
+export const AuthErrorCodes = {
+  INVALID_TOKEN: 'INVALID_TOKEN',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  TOKEN_REUSED: 'TOKEN_REUSED',
+  TOKEN_RACED: 'TOKEN_RACED',
+  CONFIG_ERROR: 'CONFIG_ERROR',
+} as const;
 
 function getAccessTtlSeconds(): number {
   return Number(process.env.JWT_ACCESS_TTL_SECONDS ?? 900);
@@ -26,8 +40,12 @@ function getRefreshTtlMs(): number {
 
 function getJwtSecret(): string {
   const s = process.env.JWT_SECRET;
-  if (!s || s.length < 32) {
-    throw new AppError('CONFIG_ERROR', 'JWT_SECRET missing or too short', 500);
+  if (!s || s.length < JWT_SECRET_MIN_LENGTH) {
+    throw new AppError(
+      AuthErrorCodes.CONFIG_ERROR,
+      `JWT_SECRET missing or shorter than ${JWT_SECRET_MIN_LENGTH} chars`,
+      500,
+    );
   }
   return s;
 }
@@ -61,17 +79,22 @@ export interface AccessTokenPayload {
 export function issueAccessToken(user: { id: string; role: Role }): string {
   return jwt.sign({ sub: user.id, role: user.role }, getJwtSecret(), {
     expiresIn: getAccessTtlSeconds(),
+    algorithm: JWT_ALGORITHM,
   });
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
   try {
-    return jwt.verify(token, getJwtSecret()) as AccessTokenPayload;
+    return jwt.verify(token, getJwtSecret(), {
+      // Whitelist explicitly — defense against future alg-confusion if anyone
+      // ever changes how access tokens are issued.
+      algorithms: [JWT_ALGORITHM],
+    }) as AccessTokenPayload;
   } catch (e) {
     if (e instanceof jwt.TokenExpiredError) {
-      throw new AppError('TOKEN_EXPIRED', 'Access token expired', 401);
+      throw new AppError(AuthErrorCodes.TOKEN_EXPIRED, 'Access token expired', 401);
     }
-    throw new AppError('INVALID_TOKEN', 'Access token invalid', 401);
+    throw new AppError(AuthErrorCodes.INVALID_TOKEN, 'Access token invalid', 401);
   }
 }
 
@@ -169,11 +192,11 @@ export async function rotateRefreshToken(
   });
 
   if (!existing) {
-    throw new AppError('INVALID_TOKEN', 'Refresh token not found', 401);
+    throw new AppError(AuthErrorCodes.INVALID_TOKEN, 'Refresh token not found', 401);
   }
 
   if (existing.expiresAt.getTime() <= Date.now()) {
-    throw new AppError('TOKEN_EXPIRED', 'Refresh token expired', 401);
+    throw new AppError(AuthErrorCodes.TOKEN_EXPIRED, 'Refresh token expired', 401);
   }
 
   if (existing.revokedAt) {
@@ -187,11 +210,20 @@ export async function rotateRefreshToken(
     const withinWindow = Date.now() - existing.revokedAt.getTime() <= GRACE_WINDOW_SECONDS * 1000;
 
     if (latest && isImmediateParent && withinWindow) {
-      // Grace path — supersede the orphan latest, issue a fresh token
-      await db.refreshToken.update({
-        where: { id: latest.id },
+      // Grace path — supersede the orphan latest, issue a fresh token.
+      // Conditional updateMany so a concurrent rotation racing to revoke the
+      // same `latest` row makes us bail out instead of double-issuing.
+      const revoked = await db.refreshToken.updateMany({
+        where: { id: latest.id, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+      if (revoked.count === 0) {
+        throw new AppError(
+          AuthErrorCodes.TOKEN_RACED,
+          'Concurrent rotation during grace; retry',
+          409,
+        );
+      }
       const refresh = await issueRefreshToken(db, existing.userId, ctx, {
         familyId: existing.familyId,
         parentId: existing.id,
@@ -204,19 +236,30 @@ export async function rotateRefreshToken(
       };
     }
 
-    // Reuse detection — torch the whole family, sibling families untouched
+    // Reuse detection — torch the whole family, sibling families untouched.
+    // updateMany w/ `revokedAt: null` filter is already race-safe (concurrent
+    // detection just no-ops on the second caller).
     await db.refreshToken.updateMany({
       where: { familyId: existing.familyId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
-    throw new AppError('TOKEN_REUSED', 'Refresh token reuse detected', 401);
+    throw new AppError(AuthErrorCodes.TOKEN_REUSED, 'Refresh token reuse detected', 401);
   }
 
-  // Happy path
-  await db.refreshToken.update({
-    where: { id: existing.id },
+  // Happy path — optimistic lock via conditional updateMany. If a concurrent
+  // rotation revoked this token between our find and our update, count=0 and
+  // we bail with TOKEN_RACED instead of silently issuing two valid pairs.
+  const revoked = await db.refreshToken.updateMany({
+    where: { id: existing.id, revokedAt: null },
     data: { revokedAt: new Date() },
   });
+  if (revoked.count === 0) {
+    throw new AppError(
+      AuthErrorCodes.TOKEN_RACED,
+      'Concurrent rotation detected; retry with current token',
+      409,
+    );
+  }
   const refresh = await issueRefreshToken(db, existing.userId, ctx, {
     familyId: existing.familyId,
     parentId: existing.id,

@@ -196,7 +196,7 @@ describe('rotateRefreshToken — reuse detection', () => {
       const user = await tx.user.create({ data: { email: 'reuse@vella.test', passwordHash: 'x' } });
       const t1 = await issueRefreshToken(tx, user.id);
       const r1 = await rotateRefreshToken(tx, t1.plain); // t1 -> t2
-      const r2 = await rotateRefreshToken(tx, r1.refresh.plain); // t2 -> t3
+      await rotateRefreshToken(tx, r1.refresh.plain); // t2 -> t3
       // Now t1 and t2 are revoked, t3 is active.
       // Backdate t1's revokedAt so it's outside the grace window
       await tx.refreshToken.update({
@@ -224,8 +224,6 @@ describe('rotateRefreshToken — reuse detection', () => {
         where: { tokenHash: sha256(sibling.plain) },
       });
       expect(stillThere?.revokedAt).toBeNull();
-      // r2.refresh exists in same family as t1; already revoked above. Confirm.
-      void r2;
     });
   });
 });
@@ -298,6 +296,48 @@ describe('rotateRefreshToken — grace window', () => {
         expect((e as AppError).code).toBe('TOKEN_REUSED');
       }
     });
+  });
+});
+
+// ============================================================================
+// Concurrency — race between two refresh requests
+// ============================================================================
+
+describe('rotateRefreshToken — concurrency', () => {
+  /**
+   * This test runs OUTSIDE withTestTx because withTestTx serializes everything
+   * inside a single transaction. To race two real rotations we need two
+   * independent Prisma calls (each becomes its own implicit transaction).
+   * We clean up manually in a try/finally.
+   */
+  it('only one of two concurrent rotations on the same token succeeds; the loser gets TOKEN_RACED', async () => {
+    const email = `race-${Date.now()}@vella.test`;
+    const user = await prisma.user.create({ data: { email, passwordHash: 'x' } });
+    try {
+      const t1 = await issueRefreshToken(prisma, user.id);
+
+      const results = await Promise.allSettled([
+        rotateRefreshToken(prisma, t1.plain),
+        rotateRefreshToken(prisma, t1.plain),
+      ]);
+
+      const successes = results.filter((r) => r.status === 'fulfilled');
+      const failures = results.filter((r) => r.status === 'rejected');
+
+      expect(successes).toHaveLength(1);
+      expect(failures).toHaveLength(1);
+      const reason = (failures[0] as PromiseRejectedResult).reason as AppError;
+      expect(reason.code).toBe('TOKEN_RACED');
+      expect(reason.status).toBe(409);
+
+      // After the race, exactly one new (non-revoked) token exists in the family
+      const alive = await prisma.refreshToken.findMany({
+        where: { familyId: t1.familyId, revokedAt: null },
+      });
+      expect(alive).toHaveLength(1);
+    } finally {
+      await prisma.user.delete({ where: { id: user.id } }); // FK cascade kills the tokens
+    }
   });
 });
 
