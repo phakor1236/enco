@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+.vitest-cache/
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Design handoff bundle (reference only, not source)
+_design/
+
+# Prisma
+apps/api/prisma/migrations/dev.db*
