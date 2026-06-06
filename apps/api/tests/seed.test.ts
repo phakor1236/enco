@@ -44,7 +44,8 @@ describe('pnpm db:seed', () => {
     expect(users).toEqual([
       { email: 'admin@example.com', role: 'ADMIN', isDemoReadonly: true },
       { email: 'demo@example.com', role: 'CUSTOMER', isDemoReadonly: true },
-      { email: 'superadmin@example.com', role: 'SUPER_ADMIN', isDemoReadonly: true },
+      // superadmin is writable per SPEC §11.5 — 6h cron reset bounds abuse
+      { email: 'superadmin@example.com', role: 'SUPER_ADMIN', isDemoReadonly: false },
     ]);
   });
 

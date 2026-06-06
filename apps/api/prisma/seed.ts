@@ -50,15 +50,18 @@ async function seedUsers(): Promise<void> {
     },
   });
 
-  // Super admin (full destructive permissions in admin panel)
+  // Super admin (full destructive permissions in admin panel).
+  // NOT marked readonly per SPEC §11.5 — the online demo must let visitors
+  // exercise SHIP / REFUND / product CRUD; abuse is bounded by the 6h DB
+  // reset cronjob.
   await prisma.user.upsert({
     where: { email: 'superadmin@example.com' },
-    update: { passwordHash: adminHash, role: 'SUPER_ADMIN', isDemoReadonly: true },
+    update: { passwordHash: adminHash, role: 'SUPER_ADMIN', isDemoReadonly: false },
     create: {
       email: 'superadmin@example.com',
       passwordHash: adminHash,
       role: 'SUPER_ADMIN',
-      isDemoReadonly: true,
+      isDemoReadonly: false,
     },
   });
 }
@@ -71,11 +74,12 @@ async function main(): Promise<void> {
 }
 
 main()
-  .catch((err) => {
+  .then(async () => {
+    await prisma.$disconnect();
+  })
+  .catch(async (err) => {
     // eslint-disable-next-line no-console
     console.error('[seed] failed:', err);
-    process.exit(1);
-  })
-  .finally(async () => {
     await prisma.$disconnect();
+    process.exit(1);
   });
