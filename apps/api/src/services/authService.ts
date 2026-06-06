@@ -158,7 +158,7 @@ export async function issueRefreshToken(
 // ---------------------------------------------------------------------------
 
 export interface RotateResult {
-  user: { id: string; role: Role };
+  user: { id: string; email: string; role: Role };
   accessToken: string;
   refresh: IssuedRefreshToken;
 }
@@ -230,7 +230,7 @@ export async function rotateRefreshToken(
       });
       const accessToken = issueAccessToken(existing.user);
       return {
-        user: { id: existing.user.id, role: existing.user.role },
+        user: { id: existing.user.id, email: existing.user.email, role: existing.user.role },
         accessToken,
         refresh,
       };
@@ -267,7 +267,7 @@ export async function rotateRefreshToken(
   const accessToken = issueAccessToken(existing.user);
 
   return {
-    user: { id: existing.user.id, role: existing.user.role },
+    user: { id: existing.user.id, email: existing.user.email, role: existing.user.role },
     accessToken,
     refresh,
   };

@@ -1,3 +1,4 @@
+import cookieParser from 'cookie-parser';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
@@ -5,16 +6,34 @@ import pinoHttp from 'pino-http';
 import { AppError } from './lib/errors.js';
 import { logger } from './lib/logger.js';
 import { errorMiddleware } from './middleware/error.js';
+import { authRouter } from './routes/auth.js';
 import { healthRouter } from './routes/health.js';
 
 export function createApp(): Express {
   const app = express();
 
   app.disable('x-powered-by');
+  // Trust X-Forwarded-For so req.ip is accurate behind a reverse proxy
+  // (Vercel / Fly). Tests also use this to simulate distinct client IPs
+  // when exercising per-IP rate limits.
+  app.set('trust proxy', 1);
+
   app.use(helmet());
   app.use(express.json({ limit: '1mb' }));
-  app.use(pinoHttp({ logger }));
+  app.use(cookieParser());
+  app.use(
+    pinoHttp({
+      logger,
+      // Redact bearer + cookie values from access logs to stop refresh tokens
+      // / access JWTs leaking into log aggregators.
+      redact: {
+        paths: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
+        censor: '[REDACTED]',
+      },
+    }),
+  );
 
+  app.use('/api/auth', authRouter);
   app.use('/api', healthRouter);
 
   // 404 — keep shape consistent with ErrorResponse via AppError + errorMiddleware
