@@ -22,9 +22,7 @@ export function ProductCard({ product }: ProductCardProps): JSX.Element {
             className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
-          <div className="h-full w-full flex items-center justify-center text-ink-faint">
-            no image
-          </div>
+          <div className="h-full w-full flex items-center justify-center text-ink-faint">無圖</div>
         )}
       </div>
       <div className="p-4 flex flex-col gap-1">

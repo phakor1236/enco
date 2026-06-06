@@ -12,7 +12,7 @@ export function ProductListPage(): JSX.Element {
   const products = useInfiniteProducts({ categorySlug });
 
   const heading = useMemo(() => {
-    if (!categorySlug) return 'All products';
+    if (!categorySlug) return '所有商品';
     const match = categories?.find((c) => c.slug === categorySlug);
     return match?.name ?? categorySlug;
   }, [categorySlug, categories]);
@@ -49,13 +49,13 @@ export function ProductListPage(): JSX.Element {
       <h1 className="font-display text-3xl font-bold mb-6">{heading}</h1>
 
       {products.isLoading ? (
-        <p className="text-ink-soft">Loading…</p>
+        <p className="text-ink-soft">載入中…</p>
       ) : products.isError ? (
         <p role="alert" className="text-danger">
           載入失敗,請稍後再試
         </p>
       ) : items.length === 0 ? (
-        <p className="text-ink-soft">No products in this category yet.</p>
+        <p className="text-ink-soft">此分類目前沒有商品</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -65,10 +65,10 @@ export function ProductListPage(): JSX.Element {
           </div>
           <div ref={sentinelRef} className="h-10" aria-hidden />
           {products.isFetchingNextPage && (
-            <p className="mt-4 text-center text-sm text-ink-soft">Loading more…</p>
+            <p className="mt-4 text-center text-sm text-ink-soft">載入更多中…</p>
           )}
           {!products.hasNextPage && items.length > 0 && (
-            <p className="mt-4 text-center text-sm text-ink-faint">— end —</p>
+            <p className="mt-4 text-center text-sm text-ink-faint">— 已到結尾 —</p>
           )}
         </>
       )}

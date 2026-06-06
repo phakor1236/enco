@@ -25,7 +25,7 @@ export function AppShell(): JSX.Element {
               horizontal-scroll strip below for mobile access (review I4). */}
           <nav className="hidden md:flex gap-1 text-sm">
             <NavLink to="/products" className={navLinkClass}>
-              All
+              全部
             </NavLink>
             {categories?.map((c) => (
               <NavLink key={c.id} to={`/products?category=${c.slug}`} className={navLinkClass}>
@@ -66,7 +66,7 @@ export function AppShell(): JSX.Element {
             nav above takes over. */}
         <nav className="md:hidden flex gap-1 overflow-x-auto px-6 pb-3 text-sm">
           <NavLink to="/products" className={navLinkClass}>
-            All
+            全部
           </NavLink>
           {categories?.map((c) => (
             <NavLink key={c.id} to={`/products?category=${c.slug}`} className={navLinkClass}>

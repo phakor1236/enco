@@ -14,7 +14,7 @@ export function ProductDetailPage(): JSX.Element {
   if (isLoading) {
     return (
       <main className="mx-auto max-w-6xl px-6 py-10">
-        <p className="text-ink-soft">Loading…</p>
+        <p className="text-ink-soft">載入中…</p>
       </main>
     );
   }
@@ -29,10 +29,10 @@ export function ProductDetailPage(): JSX.Element {
     return (
       <main className="mx-auto max-w-6xl px-6 py-10">
         <h1 className="font-display text-2xl font-bold mb-3">
-          {isNotFound ? 'Product not found' : '載入失敗'}
+          {isNotFound ? '找不到商品' : '載入失敗'}
         </h1>
         <Link to="/products" className="text-primary hover:text-primary-press">
-          ← Back to all products
+          ← 返回全部商品
         </Link>
       </main>
     );
@@ -89,20 +89,16 @@ export function ProductDetailPage(): JSX.Element {
               disabled={!selectedSku || outOfStock}
               className="h-12 rounded-full bg-primary px-6 font-semibold text-on-primary hover:bg-primary-press disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {!selectedSku
-                ? 'Select an option'
-                : outOfStock
-                  ? 'Out of stock'
-                  : 'Add to cart (preview)'}
+              {!selectedSku ? '請選擇規格' : outOfStock ? '缺貨中' : '加入購物車(預覽)'}
             </button>
             {selectedSku && !outOfStock && (
               <p className="text-xs text-ink-soft">
-                {stock} in stock · SKU {selectedSku.code}
+                庫存 {stock} · SKU {selectedSku.code}
               </p>
             )}
             {outOfStock && (
               <p role="alert" className="text-xs text-danger">
-                This variant is currently out of stock.
+                此規格目前缺貨
               </p>
             )}
           </div>

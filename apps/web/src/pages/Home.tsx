@@ -23,7 +23,7 @@ export function HomePage(): JSX.Element {
           to="/products"
           className="inline-flex rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-on-primary hover:bg-primary-press"
         >
-          Shop everything
+          逛全部商品
         </Link>
       </section>
 
@@ -31,11 +31,11 @@ export function HomePage(): JSX.Element {
         <div className="mb-4 flex items-end justify-between">
           <h2 className="font-display text-2xl font-bold">Just in</h2>
           <Link to="/products" className="text-sm text-primary hover:text-primary-press">
-            View all →
+            看全部 →
           </Link>
         </div>
         {products.isLoading ? (
-          <p className="text-ink-soft">Loading…</p>
+          <p className="text-ink-soft">載入中…</p>
         ) : products.isError ? (
           <p role="alert" className="text-danger">
             載入失敗,請稍後再試

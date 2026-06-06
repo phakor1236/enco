@@ -71,7 +71,7 @@ export function VariantPicker({ product, onSkuChange }: VariantPickerProps): JSX
                     !available && 'opacity-40 line-through cursor-not-allowed hover:bg-surface',
                   )}
                   aria-pressed={isSelected}
-                  aria-label={`${variant.name}: ${option.value}${available ? '' : ' (sold out)'}`}
+                  aria-label={`${variant.name}: ${option.value}${available ? '' : ' (缺貨)'}`}
                 >
                   {option.value}
                 </button>

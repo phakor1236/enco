@@ -71,7 +71,7 @@ describe('<VariantPicker />', () => {
   it('disables options whose only SKU is ARCHIVED (review T2.3 I1)', () => {
     render(<VariantPicker product={buildSingleAxisProduct()} />);
     // "L" exists as an option but has no ACTIVE SKU in the input.
-    const lBtn = screen.getByRole('button', { name: /Size: L \(sold out\)/ });
+    const lBtn = screen.getByRole('button', { name: /Size: L \(缺貨\)/ });
     expect(lBtn).toBeDisabled();
   });
 
