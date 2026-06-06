@@ -98,6 +98,7 @@ authRouter.post('/register', registerLimit, validateBody(RegisterBody), async (r
         const created = await tx.user.create({
           data: { email, passwordHash, role: 'CUSTOMER' },
         });
+        // TODO(P3): mergeGuestCart(created.id, req.cookies?.cart_session, tx)
         const r = await issueRefreshToken(tx, created.id, { userAgent, ip });
         return { user: created, refresh: r };
       });
@@ -132,6 +133,10 @@ authRouter.post('/login', loginLimit, validateBody(LoginBody), async (req, res, 
       throw new AppError('INVALID_CREDENTIALS', 'Email or password incorrect', 401);
     }
 
+    // TODO(P3): wrap below in prisma.$transaction and call
+    //   mergeGuestCart(user.id, req.cookies?.cart_session, tx)
+    //   inside the same tx, before issueRefreshToken. Merge failures must
+    //   only log + flag the response (see plan T3.3), never block login.
     const refresh = await issueRefreshToken(prisma, user.id, {
       userAgent: req.get('user-agent') ?? null,
       ip: req.ip ?? null,
