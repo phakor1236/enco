@@ -32,6 +32,7 @@ model User {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   refreshTokens RefreshToken[]
+  carts         Cart[]
 
   @@map("users")
 }
@@ -171,8 +172,54 @@ model Sku {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  cartItems CartItem[]
 
   @@index([productId, status])
   @@map("skus")
+}
+
+// ============================================================================
+// T3.1 — Cart + CartItem
+// ============================================================================
+
+/// Single cart per user OR per guest session. The "at least one owner" rule
+/// is enforced by a CHECK constraint added in the migration (Prisma can't
+/// express it declaratively). Two partial unique indexes — also raw SQL —
+/// enforce "one cart per user_id (when set)" and "one per session_id (when
+/// set)" without forcing both columns NOT NULL.
+///
+/// guest cookie `cart_session` (HttpOnly+Lax, 7-day sliding TTL) carries
+/// the session_id. Phase 7 cron drops stale guest carts (T7.5).
+model Cart {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  sessionId String?  @map("session_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  // Drives the T7.5 sweep of `updated_at < now() - 7d AND user_id IS NULL`.
+  @@index([updatedAt])
+  @@map("carts")
+}
+
+/// One row per (cart, sku). Quantity > 0 is enforced by a CHECK constraint
+/// in the migration. Sku FK is Restrict so admins can't accidentally hard-
+/// delete a SKU sitting in someone's cart — they must archive instead.
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String   @map("cart_id")
+  skuId     String   @map("sku_id")
+  qty       Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  sku  Sku  @relation(fields: [skuId], references: [id], onDelete: Restrict)
+
+  @@unique([cartId, skuId])
+  @@map("cart_items")
 }
