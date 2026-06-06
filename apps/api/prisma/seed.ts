@@ -8,6 +8,8 @@ import bcrypt from 'bcryptjs';
 
 import { prisma } from '../src/lib/db.js';
 
+import { seedCatalog } from './seed/products.js';
+
 /**
  * Per-slice seed scaffold. Each phase appends its own seed routine here:
  *   - T1.1  admin / customer demo users + readonly demo accounts  ← added below
@@ -69,8 +71,12 @@ async function seedUsers(): Promise<void> {
 async function main(): Promise<void> {
   await prisma.$queryRaw`SELECT 1`;
   await seedUsers();
+  const catalog = await seedCatalog();
   // eslint-disable-next-line no-console
-  console.log('[seed] ok — users (demo / admin / superadmin) upserted.');
+  console.log(
+    `[seed] ok — users (demo / admin / superadmin) + catalog ` +
+      `(${catalog.categories} categories / ${catalog.products} products / ${catalog.skus} SKUs).`,
+  );
 }
 
 main()
