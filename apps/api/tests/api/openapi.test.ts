@@ -1,5 +1,8 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+
 import request from 'supertest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { stringify } from 'yaml';
 
 import { createApp } from '../../src/app.js';
 import { prisma } from '../../src/lib/db.js';
@@ -51,6 +54,16 @@ describe('OpenAPI document', () => {
         'LoginBody',
       ]),
     );
+  });
+});
+
+describe('docs/api/openapi.yaml drift detection', () => {
+  it('matches buildOpenApiDocument() output — run `pnpm openapi:generate` if this fails', () => {
+    // Resolves to <repo-root>/docs/api/openapi.yaml from apps/api/tests/api/
+    const yamlPath = new URL('../../../../docs/api/openapi.yaml', import.meta.url);
+    const onDisk = readFileSync(yamlPath, 'utf-8');
+    const expected = stringify(buildOpenApiDocument());
+    expect(onDisk).toBe(expected);
   });
 });
 

@@ -5,3 +5,6 @@ build
 coverage
 pnpm-lock.yaml
 _design
+
+# Generated artifacts — owners must run their respective generators, not edit by hand
+docs/api/openapi.yaml

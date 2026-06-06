@@ -53,7 +53,7 @@ components:
       type: object
       properties:
         user:
-          $ref: '#/components/schemas/UserDto'
+          $ref: "#/components/schemas/UserDto"
         accessToken:
           type: string
           description: JWT access token, 15 min TTL — store in memory only
@@ -99,9 +99,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RegisterBody'
+              $ref: "#/components/schemas/RegisterBody"
       responses:
-        '201':
+        "201":
           description: User created + access token issued + refresh cookie set
           headers:
             Set-Cookie:
@@ -111,25 +111,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthSuccess'
-        '400':
+                $ref: "#/components/schemas/AuthSuccess"
+        "400":
           description: VALIDATION_ERROR
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
           description: EMAIL_TAKEN
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
           description: RATE_LIMITED (3 registers / day / IP)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
   /api/auth/login:
     post:
       tags:
@@ -139,32 +139,32 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LoginBody'
+              $ref: "#/components/schemas/LoginBody"
       responses:
-        '200':
+        "200":
           description: Access token issued + refresh cookie set
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthSuccess'
-        '400':
+                $ref: "#/components/schemas/AuthSuccess"
+        "400":
           description: VALIDATION_ERROR
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
           description: INVALID_CREDENTIALS
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
           description: RATE_LIMITED (5 logins / minute / IP)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
   /api/auth/refresh:
     post:
       tags:
@@ -174,30 +174,30 @@ paths:
         carries a new refresh value and the old one is revoked. Reuse of a stale
         token revokes the entire family.
       responses:
-        '200':
+        "200":
           description: Rotated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthSuccess'
-        '401':
+                $ref: "#/components/schemas/AuthSuccess"
+        "401":
           description: INVALID_TOKEN / TOKEN_EXPIRED / TOKEN_REUSED
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
           description: TOKEN_RACED (concurrent rotation)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
           description: RATE_LIMITED
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
   /api/auth/logout:
     post:
       tags:
@@ -205,11 +205,11 @@ paths:
       summary: Revoke the current refresh token + clear cookie
       description: Idempotent. Returns 204 even when no refresh cookie was sent.
       responses:
-        '204':
+        "204":
           description: Logged out (or already logged out)
-        '429':
+        "429":
           description: RATE_LIMITED
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
