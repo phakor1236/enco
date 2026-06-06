@@ -21,6 +21,8 @@ export function AppShell(): JSX.Element {
           <Link to="/" className="font-display text-xl font-bold tracking-tight">
             VELLA
           </Link>
+          {/* md+ shows categories inline; below md they collapse — see the
+              horizontal-scroll strip below for mobile access (review I4). */}
           <nav className="hidden md:flex gap-1 text-sm">
             <NavLink to="/products" className={navLinkClass}>
               All
@@ -59,6 +61,19 @@ export function AppShell(): JSX.Element {
             )}
           </div>
         </div>
+        {/* Mobile category strip: horizontal scroll under the header so phone
+            users can still filter (review I4). Hidden at md+ where the inline
+            nav above takes over. */}
+        <nav className="md:hidden flex gap-1 overflow-x-auto px-6 pb-3 text-sm">
+          <NavLink to="/products" className={navLinkClass}>
+            All
+          </NavLink>
+          {categories?.map((c) => (
+            <NavLink key={c.id} to={`/products?category=${c.slug}`} className={navLinkClass}>
+              {c.name}
+            </NavLink>
+          ))}
+        </nav>
       </header>
       <Outlet />
       <footer className="border-t border-line py-8 text-center text-xs text-ink-soft">

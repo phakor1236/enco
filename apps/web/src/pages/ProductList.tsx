@@ -20,21 +20,27 @@ export function ProductListPage(): JSX.Element {
   // IntersectionObserver-driven infinite scroll — sentinel sits at the bottom
   // of the grid; entering the viewport triggers fetchNextPage. The hasNext
   // guard prevents a flood of empty fetches once we've drained the cursor.
+  //
+  // Depend on the specific stable values rather than the whole `products`
+  // result (which gets a new identity on every state tick) — avoids
+  // tearing down + re-attaching the observer dozens of times per fetch
+  // cycle (review I3).
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = products;
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && products.hasNextPage && !products.isFetchingNextPage) {
-          void products.fetchNextPage();
+      ([entry]) => {
+        if (entry?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          void fetchNextPage();
         }
       },
       { rootMargin: '200px' },
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [products]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const items = products.data?.pages.flatMap((p) => p.items) ?? [];
 

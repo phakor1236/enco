@@ -76,7 +76,11 @@ export function ProductDetailPage(): JSX.Element {
           <p className="text-ink-soft leading-relaxed">{product.description}</p>
 
           {product.variants.length > 0 ? (
-            <VariantPicker product={product} onSkuChange={setSelectedSku} />
+            // key={product.id} forces VariantPicker to remount when the user
+            // navigates to a different product on the SPA — otherwise the
+            // useState-seeded selection from the previous product persists
+            // (review I1).
+            <VariantPicker key={product.id} product={product} onSkuChange={setSelectedSku} />
           ) : null}
 
           <div className="flex flex-col gap-2">
@@ -89,7 +93,7 @@ export function ProductDetailPage(): JSX.Element {
                 ? 'Select an option'
                 : outOfStock
                   ? 'Out of stock'
-                  : 'Add to cart — coming in Phase 3'}
+                  : 'Add to cart (preview)'}
             </button>
             {selectedSku && !outOfStock && (
               <p className="text-xs text-ink-soft">
