@@ -1,0 +1,215 @@
+openapi: 3.0.0
+info:
+  title: VELLA E-commerce API
+  version: 0.1.0
+  description: B2C single-seller e-commerce platform. Phase 1 covers
+    authentication; catalog, cart, checkout, orders and admin are added in later
+    slices.
+servers:
+  - url: http://localhost:4000
+    description: Local dev
+tags:
+  - name: Auth
+    description: Registration + session management
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              pattern: ^[A-Z][A-Z0-9_]*$
+            message:
+              type: string
+            details:
+              nullable: true
+          required:
+            - code
+            - message
+      required:
+        - error
+    UserDto:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+            - CUSTOMER
+            - ADMIN
+            - SUPER_ADMIN
+      required:
+        - id
+        - email
+        - role
+    AuthSuccess:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserDto'
+        accessToken:
+          type: string
+          description: JWT access token, 15 min TTL — store in memory only
+      required:
+        - user
+        - accessToken
+    RegisterBody:
+      type: object
+      properties:
+        email:
+          type: string
+          maxLength: 254
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+      required:
+        - email
+        - password
+    LoginBody:
+      type: object
+      properties:
+        email:
+          type: string
+          maxLength: 254
+          format: email
+        password:
+          type: string
+          minLength: 1
+          maxLength: 72
+      required:
+        - email
+        - password
+  parameters: {}
+paths:
+  /api/auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Register a new customer + auto-login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterBody'
+      responses:
+        '201':
+          description: User created + access token issued + refresh cookie set
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh cookie (vella_refresh)
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccess'
+        '400':
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: EMAIL_TAKEN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED (3 registers / day / IP)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Authenticate with email + password
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginBody'
+      responses:
+        '200':
+          description: Access token issued + refresh cookie set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccess'
+        '400':
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: INVALID_CREDENTIALS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED (5 logins / minute / IP)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/auth/refresh:
+    post:
+      tags:
+        - Auth
+      summary: Rotate the refresh cookie + issue a fresh access token
+      description: Reads vella_refresh cookie. On success the response Set-Cookie
+        carries a new refresh value and the old one is revoked. Reuse of a stale
+        token revokes the entire family.
+      responses:
+        '200':
+          description: Rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccess'
+        '401':
+          description: INVALID_TOKEN / TOKEN_EXPIRED / TOKEN_REUSED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: TOKEN_RACED (concurrent rotation)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: Revoke the current refresh token + clear cookie
+      description: Idempotent. Returns 204 even when no refresh cookie was sent.
+      responses:
+        '204':
+          description: Logged out (or already logged out)
+        '429':
+          description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

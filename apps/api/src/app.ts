@@ -2,9 +2,12 @@ import cookieParser from 'cookie-parser';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
+// eslint-disable-next-line import/default
+import swaggerUi from 'swagger-ui-express';
 
 import { AppError } from './lib/errors.js';
 import { logger } from './lib/logger.js';
+import { buildOpenApiDocument } from './lib/openapi.js';
 import { errorMiddleware } from './middleware/error.js';
 import { authRouter } from './routes/auth.js';
 import { healthRouter } from './routes/health.js';
@@ -40,6 +43,15 @@ export function createApp(): Express {
 
   app.use('/api/auth', authRouter);
   app.use('/api', healthRouter);
+
+  // OpenAPI docs — open in dev/test, gated by env flag in prod (SPEC §8).
+  if (process.env.NODE_ENV !== 'production' || process.env.EXPOSE_API_DOCS === 'true') {
+    const openApiDoc = buildOpenApiDocument();
+    app.get('/api/docs.json', (_req, res) => {
+      res.json(openApiDoc);
+    });
+    app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiDoc));
+  }
 
   // 404 — keep shape consistent with ErrorResponse via AppError + errorMiddleware
   app.use((_req, _res, next) => {
