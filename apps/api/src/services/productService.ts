@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma as PrismaTypes, PrismaClient } from '@prisma/client';
 import { ProductStatus } from '@prisma/client';
 import type {
   CategoryDto,
@@ -16,7 +16,7 @@ import { prisma } from '../lib/db.js';
  * tests injectable (the N+1 guard test below relies on this to swap in
  * an event-logging client).
  */
-export type DbClient = PrismaClient | Prisma.TransactionClient;
+export type DbClient = PrismaClient | PrismaTypes.TransactionClient;
 
 // Storefront endpoints only ever surface ACTIVE products. DRAFT is admin-only
 // (T6.3 will reuse the schema with a wider filter); ARCHIVED is for orphan
@@ -35,14 +35,14 @@ export interface ListProductsOpts {
 // JSON as their internal shape, not "29.00", and would break FE consumers.
 // ---------------------------------------------------------------------------
 
-type ProductListRow = Prisma.ProductGetPayload<{
+type ProductListRow = PrismaTypes.ProductGetPayload<{
   include: {
     category: { select: { id: true; name: true; slug: true } };
     images: { orderBy: { sort: 'asc' }; take: 1 };
   };
 }>;
 
-type ProductDetailRow = Prisma.ProductGetPayload<{
+type ProductDetailRow = PrismaTypes.ProductGetPayload<{
   include: {
     category: { select: { id: true; name: true; slug: true } };
     images: { orderBy: { sort: 'asc' } };
@@ -125,7 +125,7 @@ export async function listProducts(
 ): Promise<ProductListResponse> {
   const { categorySlug, limit, cursor } = opts;
 
-  const where: Prisma.ProductWhereInput = {
+  const where: PrismaTypes.ProductWhereInput = {
     status: STOREFRONT_STATUS,
     ...(categorySlug ? { category: { slug: categorySlug } } : {}),
   };
@@ -137,6 +137,14 @@ export async function listProducts(
   // Compound ordering (createdAt, id) breaks the cursor tie when seed runs
   // create multiple rows in the same millisecond — without it, paging skips
   // rows on the boundary.
+  // Note on missing-cursor behavior (review I2 — verified empirically):
+  // Prisma compiles the cursor as a correlated subquery
+  // (`WHERE created_at < (SELECT created_at FROM products WHERE id = $cursor)`).
+  // When the cursor id no longer exists, the subquery returns NULL → the
+  // comparison is NULL → no rows match → empty result + nextCursor=null.
+  // That's actually correct paginator UX (stale cursor naturally ends the
+  // scroll), so we keep the default Prisma behavior rather than detecting
+  // and 400-ing.
   const rows = (await db.product.findMany({
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

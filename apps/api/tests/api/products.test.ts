@@ -102,6 +102,18 @@ describe('GET /api/products', () => {
     }
   });
 
+  it('returns an empty page (not 500) when cursor refers to a missing product', async () => {
+    // Prisma compiles the cursor as a correlated subquery against the
+    // missing id → NULL comparisons → empty result. Captures the behavior
+    // so a future Prisma upgrade that changes this surfaces in CI.
+    const res = await request(app)
+      .get('/api/products')
+      .query({ cursor: 'cl0deletedrowxxxxxxxxx00', limit: 10 });
+    expect(res.status).toBe(200);
+    expect(res.body.items).toEqual([]);
+    expect(res.body.nextCursor).toBeNull();
+  });
+
   it('rejects invalid query (limit out of range) with 400 VALIDATION_ERROR', async () => {
     const res = await request(app).get('/api/products').query({ limit: 9999 });
     expect(res.status).toBe(400);
