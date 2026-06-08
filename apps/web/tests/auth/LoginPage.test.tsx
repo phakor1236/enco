@@ -70,6 +70,7 @@ describe('<LoginPage />', () => {
       data: {
         user: { id: 'u-1', email: 'happy@vella.test', role: 'CUSTOMER' },
         accessToken: 'jwt-happy',
+        cartMergeResult: { truncatedItems: [], droppedItems: [] },
       },
     } as AxiosResponse);
     renderLogin();

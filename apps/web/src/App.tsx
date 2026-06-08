@@ -2,8 +2,10 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 
 import { AppShell } from './components/AppShell.js';
 import { Boot } from './components/Boot.js';
+import { ToastStack } from './components/Toast.js';
 import { LoginPage } from './features/auth/LoginPage.js';
 import { RegisterPage } from './features/auth/RegisterPage.js';
+import { CartDrawer } from './features/cart/CartDrawer.js';
 import { HomePage } from './pages/Home.js';
 import { ProductDetailPage } from './pages/ProductDetail.js';
 import { ProductListPage } from './pages/ProductList.js';
@@ -23,6 +25,9 @@ export function App(): JSX.Element {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
         </Routes>
+        {/* Mounted once at the root so any route can open the drawer / toast. */}
+        <CartDrawer />
+        <ToastStack />
       </Boot>
     </BrowserRouter>
   );

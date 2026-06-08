@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { SkuDto } from '@app/shared';
 
+import { AddToCartButton } from '../features/cart/AddToCartButton.js';
 import { formatMoney } from '../features/products/format.js';
 import { useProduct } from '../features/products/useProducts.js';
 import { VariantPicker } from '../features/products/VariantPicker.js';
@@ -84,13 +85,10 @@ export function ProductDetailPage(): JSX.Element {
           ) : null}
 
           <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              disabled={!selectedSku || outOfStock}
-              className="h-12 rounded-full bg-primary px-6 font-semibold text-on-primary hover:bg-primary-press disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {!selectedSku ? '請選擇規格' : outOfStock ? '缺貨中' : '加入購物車(預覽)'}
-            </button>
+            <AddToCartButton
+              selectedSku={selectedSku}
+              requiresVariantPick={product.variants.length > 0}
+            />
             {selectedSku && !outOfStock && (
               <p className="text-xs text-ink-soft">
                 庫存 {stock} · SKU {selectedSku.code}

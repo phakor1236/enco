@@ -61,6 +61,7 @@ describe('<RegisterPage />', () => {
       data: {
         user: { id: 'u-new', email: 'fresh@vella.test', role: 'CUSTOMER' },
         accessToken: 'jwt-new',
+        cartMergeResult: { truncatedItems: [], droppedItems: [] },
       },
     } as AxiosResponse);
     renderRegister();

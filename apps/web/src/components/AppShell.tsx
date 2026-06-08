@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom';
 
 import { useCategories } from '../features/products/useProducts.js';
 import { useLogout } from '../features/auth/useAuth.js';
+import { CartIconButton } from '../features/cart/CartIconButton.js';
 import { useAuthStore } from '../stores/authStore.js';
 import { cn } from '../lib/cn.js';
 
@@ -34,6 +35,7 @@ export function AppShell(): JSX.Element {
             ))}
           </nav>
           <div className="flex items-center gap-3 text-sm">
+            <CartIconButton />
             {user ? (
               <>
                 <span className="hidden sm:inline text-ink-soft">{user.email}</span>
