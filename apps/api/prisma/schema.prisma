@@ -321,6 +321,12 @@ model OrderItem {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
   sku   Sku   @relation(fields: [skuId], references: [id], onDelete: Restrict)
 
+  // Mirror CartItem's invariant: one row per (order, SKU). Checkout dedups
+  // upstream from the cart today, but the schema-level guarantee defends
+  // future retry / replay paths from silently doubling line counts.
+  // `qty > 0` is added via raw SQL in the migration (Prisma can't express
+  // CHECK declaratively).
+  @@unique([orderId, skuId])
   @@index([orderId])
   @@map("order_items")
 }
