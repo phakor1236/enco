@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { CartMergeResultSchema } from './cart.js';
+
 /**
  * Auth request bodies — shared between API (validates incoming JSON) and FE
  * (validates form input before POST). Defensive bounds:
@@ -32,5 +34,8 @@ export type UserDto = z.infer<typeof UserDto>;
 export const AuthSuccess = z.object({
   user: UserDto,
   accessToken: z.string(),
+  // T3.3: always present on /register and /login responses; empty arrays when
+  // no guest cart cookie was sent or there was nothing to merge.
+  cartMergeResult: CartMergeResultSchema,
 });
 export type AuthSuccess = z.infer<typeof AuthSuccess>;

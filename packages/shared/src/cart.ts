@@ -53,4 +53,27 @@ export const CartDtoSchema = z.object({
 });
 export type CartDto = z.infer<typeof CartDtoSchema>;
 
+/**
+ * Result of merging a guest cart into a member cart on login/register.
+ * Drives the FE post-login toast — "N item(s) capped at stock", "M item(s)
+ * no longer available". Always present in auth responses; empty arrays
+ * when nothing merged (no guest cart, no cookie, or merge errored silently).
+ */
+export const CartMergeResultSchema = z.object({
+  truncatedItems: z.array(
+    z.object({
+      skuId: z.string(),
+      requested: z.number().int().positive(),
+      granted: z.number().int().nonnegative(),
+    }),
+  ),
+  droppedItems: z.array(
+    z.object({
+      skuId: z.string(),
+      reason: z.enum(['INACTIVE', 'OUT_OF_STOCK']),
+    }),
+  ),
+});
+export type CartMergeResult = z.infer<typeof CartMergeResultSchema>;
+
 export const CART_LIMITS = { MAX_QTY_PER_LINE } as const;

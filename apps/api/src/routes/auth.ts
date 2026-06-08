@@ -1,10 +1,11 @@
 import { Router, type Response, type Router as RouterType, type RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { Prisma } from '@prisma/client';
-import { ErrorCodes, LoginBody, RegisterBody } from '@app/shared';
+import { ErrorCodes, LoginBody, RegisterBody, type CartMergeResult } from '@app/shared';
 
 import { prisma } from '../lib/db.js';
 import { AppError } from '../lib/errors.js';
+import { logger } from '../lib/logger.js';
 import { validateBody } from '../middleware/validate.js';
 import {
   hashPassword,
@@ -14,6 +15,35 @@ import {
   rotateRefreshToken,
   verifyPassword,
 } from '../services/authService.js';
+import { mergeGuestCart } from '../services/cartService.js';
+
+import { CART_COOKIE } from './cart.js';
+
+const EMPTY_MERGE_RESULT: CartMergeResult = { truncatedItems: [], droppedItems: [] };
+
+/**
+ * Run mergeGuestCart in its own transaction AFTER auth has committed, and
+ * always clear the cart_session cookie. Per SPEC §5 a merge failure must not
+ * block login/register — we log + return an empty result so the auth flow
+ * succeeds, the FE just shows no merge toast. Two separate txes (not one)
+ * because Prisma's $transaction can't isolate a sub-failure with savepoints.
+ */
+async function performGuestCartMerge(
+  res: Response,
+  userId: string,
+  guestSid: unknown,
+): Promise<CartMergeResult> {
+  if (typeof guestSid !== 'string' || guestSid.length === 0) return EMPTY_MERGE_RESULT;
+  try {
+    const result = await prisma.$transaction((tx) => mergeGuestCart(tx, userId, guestSid));
+    res.clearCookie(CART_COOKIE, { path: '/' });
+    return result;
+  } catch (e) {
+    logger.warn({ err: e, userId }, 'mergeGuestCart failed; auth flow continues');
+    res.clearCookie(CART_COOKIE, { path: '/' });
+    return EMPTY_MERGE_RESULT;
+  }
+}
 
 const REFRESH_COOKIE = 'vella_refresh';
 // Constant-time-ish dummy hash so login bcrypt-compare runs even when the email
@@ -97,7 +127,6 @@ authRouter.post('/register', registerLimit, validateBody(RegisterBody), async (r
         const created = await tx.user.create({
           data: { email, passwordHash, role: 'CUSTOMER' },
         });
-        // TODO(P3): mergeGuestCart(created.id, req.cookies?.cart_session, tx)
         const r = await issueRefreshToken(tx, created.id, { userAgent, ip });
         return { user: created, refresh: r };
       });
@@ -110,11 +139,13 @@ authRouter.post('/register', registerLimit, validateBody(RegisterBody), async (r
       throw e;
     }
 
+    const cartMergeResult = await performGuestCartMerge(res, user.id, req.cookies?.[CART_COOKIE]);
     const accessToken = issueAccessToken(user);
     setRefreshCookie(res, refresh.plain);
     res.status(201).json({
       user: { id: user.id, email: user.email, role: user.role },
       accessToken,
+      cartMergeResult,
     });
   } catch (e) {
     next(e);
@@ -132,20 +163,18 @@ authRouter.post('/login', loginLimit, validateBody(LoginBody), async (req, res, 
       throw new AppError(ErrorCodes.INVALID_CREDENTIALS, 'Email or password incorrect', 401);
     }
 
-    // TODO(P3): wrap below in prisma.$transaction and call
-    //   mergeGuestCart(user.id, req.cookies?.cart_session, tx)
-    //   inside the same tx, before issueRefreshToken. Merge failures must
-    //   only log + flag the response (see plan T3.3), never block login.
     const refresh = await issueRefreshToken(prisma, user.id, {
       userAgent: req.get('user-agent') ?? null,
       ip: req.ip ?? null,
     });
+    const cartMergeResult = await performGuestCartMerge(res, user.id, req.cookies?.[CART_COOKIE]);
     const accessToken = issueAccessToken(user);
 
     setRefreshCookie(res, refresh.plain);
     res.json({
       user: { id: user.id, email: user.email, role: user.role },
       accessToken,
+      cartMergeResult,
     });
   } catch (e) {
     next(e);

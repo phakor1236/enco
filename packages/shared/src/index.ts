@@ -12,9 +12,11 @@ export {
   CART_LIMITS,
   CartDtoSchema,
   CartItemDtoSchema,
+  CartMergeResultSchema,
   UpdateCartItemBody,
   type CartDto,
   type CartItemDto,
+  type CartMergeResult,
 } from './cart.js';
 export {
   CategoryDtoSchema,

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Prisma } from '@prisma/client';
-import { ErrorCodes, type CartDto, type CartItemDto } from '@app/shared';
+import { ErrorCodes, type CartDto, type CartItemDto, type CartMergeResult } from '@app/shared';
 
 import { AppError } from '../lib/errors.js';
 import { type DbClient } from '../lib/db.js';
@@ -12,8 +12,6 @@ import { type DbClient } from '../lib/db.js';
  *   { userId: null,      sessionId: string }   for guests
  * Routes resolve which shape applies before calling in. Service never
  * peeks at JWTs or cookies.
- *
- * Phase 3 T3.3 will add mergeGuestCart() here.
  */
 
 export type CartOwner = { userId: string; sessionId?: null } | { sessionId: string; userId?: null };
@@ -141,6 +139,92 @@ export async function removeItem(db: DbClient, owner: CartOwner, itemId: string)
   }
   await db.cartItem.delete({ where: { id: itemId } });
   return loadCartDto(db, cart.id);
+}
+
+// ---------------------------------------------------------------------------
+// Merge guest cart into member cart (T3.3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge the guest cart identified by `sessionId` into the user's cart, then
+ * delete the guest cart row (cart_items cascade via FK).
+ *
+ *   - same SKU on both sides → qty sums
+ *   - sum exceeds SKU stock  → clamp to stock, report in `truncatedItems`
+ *   - ARCHIVED SKU           → silently drop, report in `droppedItems`
+ *   - sessionId missing / guest cart missing / guest cart empty → no-op
+ *
+ * MUST be called inside an outer `prisma.$transaction` (caller wraps + decides
+ * whether to catch). Login / register MUST catch — per SPEC §5 a merge
+ * failure surfaces a fallback toast but never blocks auth.
+ */
+export async function mergeGuestCart(
+  tx: DbClient,
+  userId: string,
+  sessionId: string | null | undefined,
+): Promise<CartMergeResult> {
+  const result: CartMergeResult = { truncatedItems: [], droppedItems: [] };
+  if (!sessionId) return result;
+
+  // Filter `userId: null` so a stale cookie pointing at a previously-merged
+  // cart (which would now have userId set, were that possible) doesn't get
+  // re-merged. In practice the partial unique indexes already preclude this,
+  // but the predicate makes the intent explicit.
+  const guest = await tx.cart.findFirst({
+    where: { sessionId, userId: null },
+    select: {
+      id: true,
+      items: {
+        select: {
+          skuId: true,
+          qty: true,
+          sku: { select: { stock: true, status: true } },
+        },
+      },
+    },
+  });
+  if (!guest) return result;
+
+  if (guest.items.length > 0) {
+    const memberCart = await getOrCreateCart(tx, { userId });
+    const existing = await tx.cartItem.findMany({
+      where: {
+        cartId: memberCart.id,
+        skuId: { in: guest.items.map((i) => i.skuId) },
+      },
+      select: { skuId: true, qty: true },
+    });
+    const memberQtyBySku = new Map(existing.map((e) => [e.skuId, e.qty]));
+
+    for (const g of guest.items) {
+      if (g.sku.status !== 'ACTIVE') {
+        result.droppedItems.push({ skuId: g.skuId, reason: 'INACTIVE' });
+        continue;
+      }
+      if (g.sku.stock <= 0) {
+        result.droppedItems.push({ skuId: g.skuId, reason: 'OUT_OF_STOCK' });
+        continue;
+      }
+      const requested = (memberQtyBySku.get(g.skuId) ?? 0) + g.qty;
+      const granted = Math.min(requested, g.sku.stock);
+      if (granted < requested) {
+        result.truncatedItems.push({ skuId: g.skuId, requested, granted });
+      }
+      // Sequential awaits inside the tx — parallel writes on a single tx
+      // connection can deadlock and lose ordering. Guest carts are small
+      // (~items per user) so the perf cost is negligible.
+      // eslint-disable-next-line no-await-in-loop
+      await tx.cartItem.upsert({
+        where: { cartId_skuId: { cartId: memberCart.id, skuId: g.skuId } },
+        update: { qty: granted },
+        create: { cartId: memberCart.id, skuId: g.skuId, qty: granted },
+      });
+    }
+  }
+
+  // FK cart_items.cart_id ON DELETE CASCADE (schema T3.1) drops the guest items.
+  await tx.cart.delete({ where: { id: guest.id } });
+  return result;
 }
 
 // ---------------------------------------------------------------------------

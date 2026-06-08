@@ -51,6 +51,47 @@ components:
         - id
         - email
         - role
+    CartMergeResult:
+      type: object
+      properties:
+        truncatedItems:
+          type: array
+          items:
+            type: object
+            properties:
+              skuId:
+                type: string
+              requested:
+                type: integer
+                minimum: 0
+                exclusiveMinimum: true
+              granted:
+                type: integer
+                minimum: 0
+            required:
+              - skuId
+              - requested
+              - granted
+          description: SKUs whose summed qty was clamped down to current stock
+        droppedItems:
+          type: array
+          items:
+            type: object
+            properties:
+              skuId:
+                type: string
+              reason:
+                type: string
+                enum:
+                  - INACTIVE
+                  - OUT_OF_STOCK
+            required:
+              - skuId
+              - reason
+          description: SKUs from the guest cart that were silently dropped during merge
+      required:
+        - truncatedItems
+        - droppedItems
     AuthSuccess:
       type: object
       properties:
@@ -59,9 +100,15 @@ components:
         accessToken:
           type: string
           description: JWT access token, 15 min TTL — store in memory only
+        cartMergeResult:
+          allOf:
+            - $ref: "#/components/schemas/CartMergeResult"
+            - description: Guest-cart merge outcome — empty arrays when no guest cookie or
+                nothing to merge
       required:
         - user
         - accessToken
+        - cartMergeResult
     RegisterBody:
       type: object
       properties:

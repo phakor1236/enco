@@ -41,10 +41,35 @@ const UserDto = z
   })
   .openapi('UserDto');
 
+const CartMergeResult = z
+  .object({
+    truncatedItems: z
+      .array(
+        z.object({
+          skuId: z.string(),
+          requested: z.number().int().positive(),
+          granted: z.number().int().nonnegative(),
+        }),
+      )
+      .describe('SKUs whose summed qty was clamped down to current stock'),
+    droppedItems: z
+      .array(
+        z.object({
+          skuId: z.string(),
+          reason: z.enum(['INACTIVE', 'OUT_OF_STOCK']),
+        }),
+      )
+      .describe('SKUs from the guest cart that were silently dropped during merge'),
+  })
+  .openapi('CartMergeResult');
+
 const AuthSuccess = z
   .object({
     user: UserDto,
     accessToken: z.string().describe('JWT access token, 15 min TTL — store in memory only'),
+    cartMergeResult: CartMergeResult.describe(
+      'Guest-cart merge outcome — empty arrays when no guest cookie or nothing to merge',
+    ),
   })
   .openapi('AuthSuccess');
 
@@ -74,6 +99,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV3['generateD
 
   registry.register('ErrorResponse', ErrorResponse);
   registry.register('UserDto', UserDto);
+  registry.register('CartMergeResult', CartMergeResult);
   registry.register('AuthSuccess', AuthSuccess);
   registry.register('RegisterBody', RegisterBodyOpen);
   registry.register('LoginBody', LoginBodyOpen);
