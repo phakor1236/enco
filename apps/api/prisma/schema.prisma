@@ -31,8 +31,10 @@ model User {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  refreshTokens RefreshToken[]
-  carts         Cart[]
+  refreshTokens           RefreshToken[]
+  carts                   Cart[]
+  orders                  Order[]
+  orderStatusLogsOperated OrderStatusLog[] @relation("OrderStatusLogOperator")
 
   @@map("users")
 }
@@ -172,8 +174,9 @@ model Sku {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  product   Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
-  cartItems CartItem[]
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
   @@index([productId, status])
   @@map("skus")
@@ -222,4 +225,160 @@ model CartItem {
 
   @@unique([cartId, skuId])
   @@map("cart_items")
+}
+
+// ============================================================================
+// T4.1 — Order family
+// ============================================================================
+
+/// State machine vertices. Transitions (PENDING→PAID, PAID→SHIPPED, …) are
+/// enforced in `transitionOrder()` (T4.2). PAID→CANCELLED is intentionally
+/// missing per SPEC §5 — paid orders must take the REFUNDED path so the
+/// "cancel + refund" semantics stay merged.
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMockStatus {
+  PENDING
+  SUCCESS
+  FAILURE
+  REFUNDED
+}
+
+/// Drives the mock webhook's behavior at PaymentMock creation time:
+///   AUTO_SUCCESS → setTimeout fires success webhook → PENDING→PAID
+///   AUTO_FAILURE → setTimeout fires failure webhook → PENDING→CANCELLED
+///                 (the E2E unhappy path — T8.9 exercises this)
+///   MANUAL       → SUPER_ADMIN dashboard triggers the webhook by hand
+enum PaymentOutcomeMode {
+  AUTO_SUCCESS
+  AUTO_FAILURE
+  MANUAL
+}
+
+enum ShipmentStatus {
+  IN_TRANSIT
+  DELIVERED
+}
+
+/// One row per checkout. Money columns are frozen at checkout time so a
+/// later coupon edit / base-price change can never retroactively rewrite
+/// historical totals. The state field is mutated ONLY via `transitionOrder`
+/// — routes and admin handlers MUST NOT assign to it directly (SPEC §5).
+///
+/// `paymentIntentId` is the upstream PSP's idempotency key. `@unique` on a
+/// nullable column gives us "at most one row per intent once attached"
+/// (Postgres treats multiple NULL values as distinct under a UNIQUE
+/// constraint, so PENDING orders before payment attach don't collide).
+/// T4.4's webhook handler uses this to make the PAID transition idempotent
+/// via a conditional UPDATE that affects zero rows on replay.
+model Order {
+  id              String      @id @default(cuid())
+  userId          String      @map("user_id")
+  status          OrderStatus @default(PENDING)
+  paymentIntentId String?     @unique @map("payment_intent_id")
+  subtotal        Decimal     @db.Decimal(10, 2)
+  discount        Decimal     @default(0) @db.Decimal(10, 2)
+  shippingFee     Decimal     @default(0) @map("shipping_fee") @db.Decimal(10, 2)
+  total           Decimal     @db.Decimal(10, 2)
+  shippingAddress Json        @map("shipping_address")
+  paymentMethod   String      @map("payment_method")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  paidAt          DateTime?   @map("paid_at")
+  shippedAt       DateTime?   @map("shipped_at")
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items     OrderItem[]
+  logs      OrderStatusLog[]
+  payments  PaymentMock[]
+  shipments ShipmentMock[]
+
+  // Drives "我的訂單" list (newest first) and sales reports (range scans).
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("orders")
+}
+
+/// `unitPrice` is the calculation source — frozen at checkout, never read
+/// from the SKU again. `skuSnapshot` is display-only (product name, SKU
+/// code, option combo, primary image URL) so receipts keep rendering even
+/// after a SKU is archived or renamed. Strict semantic split keeps report
+/// totals identical to what the customer saw at checkout.
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String  @map("order_id")
+  skuId       String  @map("sku_id")
+  skuSnapshot Json    @map("sku_snapshot")
+  qty         Int
+  unitPrice   Decimal @map("unit_price") @db.Decimal(10, 2)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku   Sku   @relation(fields: [skuId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+/// One row per state transition, written inside the same tx as the status
+/// change so the log can never disagree with Order.status. `operatorId`
+/// is nullable for system-driven transitions (cron auto-cancel, webhook).
+/// FK is SetNull so deleting a stale admin account doesn't nuke audit
+/// history.
+model OrderStatusLog {
+  id         String       @id @default(cuid())
+  orderId    String       @map("order_id")
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+  note       String?
+  operatorId String?      @map("operator_id")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  order    Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  operator User? @relation("OrderStatusLogOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_logs")
+}
+
+/// Fake PSP integration. The portfolio doesn't talk to a real payment
+/// provider, but the schema mirrors one closely enough that a future
+/// swap-in would be a service-layer change, not a data-model change.
+/// Multiple rows per Order are allowed — a REFUNDED transition inserts a
+/// second row (the refund) rather than mutating the original.
+model PaymentMock {
+  id           String             @id @default(cuid())
+  orderId      String             @map("order_id")
+  provider     String
+  status       PaymentMockStatus  @default(PENDING)
+  outcomeMode  PaymentOutcomeMode @default(AUTO_SUCCESS) @map("outcome_mode")
+  mockResponse Json               @map("mock_response")
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("payment_mocks")
+}
+
+/// Created during the PAID→SHIPPED transition (T4.2). The tracking number
+/// is generated locally but kept UNIQUE so the order page can render a
+/// "real-looking" tracking link without collisions.
+model ShipmentMock {
+  id         String         @id @default(cuid())
+  orderId    String         @map("order_id")
+  carrier    String
+  trackingNo String         @unique @map("tracking_no")
+  status     ShipmentStatus @default(IN_TRANSIT)
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("shipment_mocks")
 }
