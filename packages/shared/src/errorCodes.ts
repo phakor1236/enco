@@ -32,6 +32,10 @@ export const ErrorCodes = {
   OUT_OF_STOCK: 'OUT_OF_STOCK',
   SKU_INACTIVE: 'SKU_INACTIVE',
   SKU_NOT_FOUND: 'SKU_NOT_FOUND',
+
+  // ---- Phase 4 Checkout / Order -------------------------------------------
+  INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
+  ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
