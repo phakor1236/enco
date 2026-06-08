@@ -5,7 +5,7 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { prisma } from '../../src/lib/db.js';
-import { requireAuth, requireRole } from '../../src/middleware/auth.js';
+import { optionalAuth, requireAuth, requireRole } from '../../src/middleware/auth.js';
 import { errorMiddleware } from '../../src/middleware/error.js';
 import { issueAccessToken } from '../../src/services/authService.js';
 
@@ -26,6 +26,9 @@ function buildApp(): express.Express {
   });
   app.get('/super-only', requireAuth, requireRole('SUPER_ADMIN'), (req, res) => {
     res.json({ user: req.user });
+  });
+  app.get('/maybe-me', optionalAuth, (req, res) => {
+    res.json({ user: req.user ?? null });
   });
 
   app.use(errorMiddleware);
@@ -122,5 +125,52 @@ describe('requireRole', () => {
 
   it('throws at construction time when called with no roles (programmer error)', () => {
     expect(() => requireRole()).toThrow(/at least one role/);
+  });
+});
+
+// ============================================================================
+// optionalAuth
+// ============================================================================
+
+describe('optionalAuth', () => {
+  it('continues as guest when no Authorization header is sent (req.user undefined)', async () => {
+    const res = await request(app).get('/maybe-me');
+    expect(res.status).toBe(200);
+    expect(res.body.user).toBeNull();
+  });
+
+  it('continues as guest when header is non-Bearer (treated as no token)', async () => {
+    const res = await request(app).get('/maybe-me').set('Authorization', 'Basic abc123');
+    expect(res.status).toBe(200);
+    expect(res.body.user).toBeNull();
+  });
+
+  it('populates req.user on a valid Bearer token', async () => {
+    const token = issueAccessToken({ id: 'u-7', role: 'CUSTOMER' });
+    const res = await request(app).get('/maybe-me').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.user).toEqual({ id: 'u-7', role: 'CUSTOMER' });
+  });
+
+  it('surfaces 401 TOKEN_EXPIRED for an expired token (no silent demotion to guest)', async () => {
+    // Regression for the cart-strand bug: previously the catch swallowed
+    // TokenExpiredError → cart router minted a guest cart_session → item
+    // landed in a new guest cart instead of the member cart. Now 401 bubbles
+    // so the FE apiClient interceptor can single-flight refresh and retry.
+    const expired = jwt.sign({ sub: 'u-1', role: 'CUSTOMER' }, process.env.JWT_SECRET as string, {
+      expiresIn: -1,
+      algorithm: 'HS256',
+    });
+    const res = await request(app).get('/maybe-me').set('Authorization', `Bearer ${expired}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('TOKEN_EXPIRED');
+  });
+
+  it('surfaces 401 INVALID_TOKEN for a tampered token (no silent demotion to guest)', async () => {
+    const token = issueAccessToken({ id: 'u-1', role: 'CUSTOMER' });
+    const tampered = token.slice(0, -4) + 'XXXX';
+    const res = await request(app).get('/maybe-me').set('Authorization', `Bearer ${tampered}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('INVALID_TOKEN');
   });
 });

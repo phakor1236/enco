@@ -143,6 +143,28 @@ describe('POST /api/cart/items (guest)', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
+
+  it('two concurrent adds for the same SKU sum qty without losing one (TOCTOU regression)', async () => {
+    // Pre-fix flow read existing.qty THEN wrote newQty back; two parallel
+    // add-N calls both computed N (because both saw qty=0) and one write
+    // silently won, dropping the other. Atomic `increment` + tx fixes it.
+    const sid = `cart-e2e-${Date.now()}-toctou`;
+    const cookie = `${CART_COOKIE}=${sid}`;
+    const [a, b] = await Promise.all([
+      request(app)
+        .post('/api/cart/items')
+        .set('Cookie', cookie)
+        .send({ skuId: testSku.id, qty: 3 }),
+      request(app)
+        .post('/api/cart/items')
+        .set('Cookie', cookie)
+        .send({ skuId: testSku.id, qty: 4 }),
+    ]);
+    expect([a.status, b.status]).toEqual(expect.arrayContaining([201, 201]));
+    const final = await request(app).get('/api/cart').set('Cookie', cookie);
+    expect(final.body.items).toHaveLength(1);
+    expect(final.body.items[0].qty).toBe(7);
+  });
 });
 
 // ============================================================================
