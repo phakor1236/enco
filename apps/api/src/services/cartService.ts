@@ -74,25 +74,31 @@ export async function addItem(db: DbClient, owner: CartOwner, input: AddInput): 
   const sku = await loadActiveSku(db, input.skuId);
   const cart = await getOrCreateCart(db, owner);
 
-  // Existing row? Add to current qty. Stock check uses (existing + delta).
-  const existing = await db.cartItem.findUnique({
-    where: { cartId_skuId: { cartId: cart.id, skuId: sku.id } },
-    select: { qty: true },
-  });
-  const newQty = (existing?.qty ?? 0) + input.qty;
-
-  if (newQty > sku.stock) {
-    throw new AppError(ErrorCodes.OUT_OF_STOCK, `庫存不足:此 SKU 目前僅剩 ${sku.stock} 件`, 409, {
-      available: sku.stock,
-      requested: newQty,
+  // Atomic increment-or-create with stock post-check. Two parallel add-N calls
+  // both bump qty via `increment` (no read-then-write race that loses one add);
+  // exceeding stock throws inside the tx so the increment rolls back.
+  const work = async (tx: DbClient): Promise<void> => {
+    const after = await tx.cartItem.upsert({
+      where: { cartId_skuId: { cartId: cart.id, skuId: sku.id } },
+      update: { qty: { increment: input.qty } },
+      create: { cartId: cart.id, skuId: sku.id, qty: input.qty },
+      include: { sku: { select: { stock: true } } },
     });
-  }
+    if (after.qty > after.sku.stock) {
+      throw new AppError(
+        ErrorCodes.OUT_OF_STOCK,
+        `庫存不足:此 SKU 目前僅剩 ${after.sku.stock} 件`,
+        409,
+        { available: after.sku.stock, requested: after.qty },
+      );
+    }
+  };
 
-  await db.cartItem.upsert({
-    where: { cartId_skuId: { cartId: cart.id, skuId: sku.id } },
-    update: { qty: newQty },
-    create: { cartId: cart.id, skuId: sku.id, qty: input.qty },
-  });
+  if ('$transaction' in db) {
+    await db.$transaction(work);
+  } else {
+    await work(db);
+  }
 
   return loadCartDto(db, cart.id);
 }

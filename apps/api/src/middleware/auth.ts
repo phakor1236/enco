@@ -50,12 +50,13 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
 
 /**
  * Optional auth: if a valid Bearer token is present, populate req.user;
- * if absent or malformed, continue with req.user undefined. Used by routes
- * (e.g. /cart) that serve both logged-in and guest callers — the handler
- * branches on req.user itself.
+ * if no Authorization header was sent, continue as guest. Used by routes
+ * (e.g. /cart) that serve both logged-in and guest callers.
  *
- * Distinct from requireAuth: never throws on absent/bad token, only on a
- * malformed `Bearer` prefix that suggests a buggy client.
+ * Distinct from "no token at all": a present-but-bad token MUST surface
+ * 401 (TOKEN_EXPIRED / INVALID_TOKEN) so the FE apiClient interceptor can
+ * single-flight refresh and retry. Silently demoting an expired member to
+ * a guest cart would strand items in a fresh guest cart instead.
  */
 export const optionalAuth: RequestHandler = (req, _res, next) => {
   const header = req.headers.authorization;
@@ -66,11 +67,10 @@ export const optionalAuth: RequestHandler = (req, _res, next) => {
   try {
     const payload = verifyAccessToken(token);
     req.user = { id: payload.sub, role: payload.role };
-  } catch {
-    // Expired or invalid token: treat as guest. FE single-flight refresh
-    // (apiClient interceptor) will retry with a fresh token if available.
+    next();
+  } catch (e) {
+    next(e);
   }
-  next();
 };
 
 /**
