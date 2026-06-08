@@ -18,11 +18,14 @@ export function AddToCartButton({ selectedSku, requiresVariantPick }: Props): JS
 
   const stock = selectedSku?.stock ?? 0;
   const outOfStock = selectedSku !== null && stock <= 0;
-  const needsPick = requiresVariantPick && !selectedSku;
+  const needsPick = !selectedSku;
+  // Always require a selectedSku — the no-variant case will pick up the
+  // single SKU once ProductDetail auto-selects it; until then, an enabled
+  // button whose click handler bails would look broken to the user.
   const disabled = needsPick || outOfStock || add.isPending;
 
   let label = '加入購物車';
-  if (needsPick) label = '請選擇規格';
+  if (needsPick) label = requiresVariantPick ? '請選擇規格' : '無可購買的規格';
   else if (outOfStock) label = '缺貨中';
   else if (add.isPending) label = '加入中…';
 

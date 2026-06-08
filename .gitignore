@@ -37,3 +37,6 @@ _design/
 
 # Prisma
 apps/api/prisma/migrations/dev.db*
+
+# Ad-hoc local Playwright verification (replaced by T8.1 proper E2E infra)
+.playwright-verify/
