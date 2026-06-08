@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 
 import { createApp } from '../../src/app.js';
 import { prisma } from '../../src/lib/db.js';
 import { CART_COOKIE } from '../../src/routes/cart.js';
+import * as cartService from '../../src/services/cartService.js';
 
 const app = createApp();
 
@@ -16,9 +17,7 @@ const app = createApp();
  *  - ARCHIVED SKU → silently dropped, surface in `droppedItems`
  *  - guest cart row deleted after merge
  *  - cart_session cookie cleared on the auth response
- *  - merge failure must not block login (covered via the structural happy
- *    path; the catch path is verified by review since triggering a real
- *    Prisma error in-tx requires mocking)
+ *  - merge failure must not block login (vi.spyOn forces a throw)
  */
 
 const EMAIL_DOMAIN = 'e2e-merge.test';
@@ -259,5 +258,29 @@ describe('POST /api/auth/login — guest cart merge', () => {
     const res = await loginWithCookie(`${CART_COOKIE}=cart-merge-e2e-ghost-sid`, email);
     expect(res.status).toBe(200);
     expect(res.body.cartMergeResult).toEqual({ truncatedItems: [], droppedItems: [] });
+  });
+
+  it('login still succeeds with empty cartMergeResult when mergeGuestCart throws', async () => {
+    // Forces the catch path in performGuestCartMerge — per SPEC §5 a merge
+    // failure must log + flag the response but never block auth. ESM named
+    // imports are live bindings, so spying on the cartService namespace
+    // intercepts the route's reference to mergeGuestCart.
+    const { email, sid } = await registerThenSeedGuest([{ skuId: skuA.id, qty: 2 }], 'mergefail');
+    const spy = vi
+      .spyOn(cartService, 'mergeGuestCart')
+      .mockRejectedValueOnce(new Error('forced merge failure'));
+    try {
+      const res = await loginWithCookie(`${CART_COOKIE}=${sid}`, email);
+      expect(res.status).toBe(200);
+      expect(res.body.cartMergeResult).toEqual({ truncatedItems: [], droppedItems: [] });
+      expect(typeof res.body.accessToken).toBe('string');
+      expect(spy).toHaveBeenCalledOnce();
+      // The cookie is still cleared so subsequent requests don't re-attempt
+      // against the same (presumed-broken) guest session.
+      const cleared = parseSetCookie(res.headers['set-cookie']).find((c) => c.name === CART_COOKIE);
+      expect(cleared?.value).toBe('');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
