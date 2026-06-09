@@ -8,6 +8,7 @@ import { Field } from '../components/Field.js';
 import { useAuthStore } from '../stores/authStore.js';
 import { useCart } from '../features/cart/useCart.js';
 import { formatMoney } from '../features/products/format.js';
+import { CouponInput } from '../features/checkout/CouponInput.js';
 import { useCheckout } from '../features/checkout/useCheckout.js';
 
 interface FormErrors {
@@ -45,6 +46,10 @@ export function CheckoutPage(): JSX.Element {
   const [city, setCity] = useState('');
   const [addr, setAddr] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: string;
+  } | null>(null);
 
   // Guard: must be logged in
   if (!user) {
@@ -80,6 +85,7 @@ export function CheckoutPage(): JSX.Element {
       const result = await checkout.mutateAsync({
         shippingAddress: parsed.data,
         paymentMethod: 'mock_card',
+        couponCode: appliedCoupon?.code,
       });
       navigate(`/orders/success/${result.orderId}`);
     } catch (err) {
@@ -88,6 +94,10 @@ export function CheckoutPage(): JSX.Element {
   }
 
   const isEmpty = !cartLoading && (!cart || cart.items.length === 0);
+
+  const subtotal = cart?.subtotal ?? '0';
+  const discountNum = parseFloat(appliedCoupon?.discountAmount ?? '0');
+  const totalNum = Math.max(0, parseFloat(subtotal) - discountNum);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -176,12 +186,35 @@ export function CheckoutPage(): JSX.Element {
                   </ul>
                   <div className="flex items-baseline justify-between border-t border-line pt-3">
                     <span className="text-sm text-ink-soft">小計</span>
+                    <span className="tabular-nums">{formatMoney(subtotal)}</span>
+                  </div>
+                  {appliedCoupon && (
+                    <div className="flex items-baseline justify-between pt-1">
+                      <span className="text-sm text-success">折扣</span>
+                      <span className="tabular-nums text-success">
+                        -{formatMoney(appliedCoupon.discountAmount)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-baseline justify-between border-t border-line pt-3">
+                    <span className="text-sm font-semibold text-ink">合計</span>
                     <span className="font-display text-lg font-bold tabular-nums">
-                      {formatMoney(cart?.subtotal ?? '0')}
+                      {formatMoney(totalNum)}
                     </span>
                   </div>
                 </>
               )}
+            </div>
+
+            <div className="rounded-xl border border-line bg-surface p-5">
+              <p className="mb-2 text-sm font-semibold text-ink">優惠碼</p>
+              <CouponInput
+                subtotal={subtotal}
+                appliedCode={appliedCoupon?.code ?? null}
+                discountAmount={appliedCoupon?.discountAmount ?? '0'}
+                onApply={(code, discountAmount) => setAppliedCoupon({ code, discountAmount })}
+                onRemove={() => setAppliedCoupon(null)}
+              />
             </div>
 
             <div className="rounded-xl border border-line bg-surface p-5 text-sm text-ink-soft">

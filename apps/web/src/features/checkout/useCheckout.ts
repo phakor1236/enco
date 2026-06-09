@@ -67,6 +67,33 @@ export const orderKeys = {
 // Hooks
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Coupon
+// ---------------------------------------------------------------------------
+
+export interface CouponValidateResult {
+  code: string;
+  type: 'FIXED' | 'PERCENT';
+  value: string;
+  discountAmount: string;
+}
+
+export function useCouponValidate() {
+  return useMutation<CouponValidateResult, Error, { code: string; subtotal: string }>({
+    mutationFn: async ({ code, subtotal }) => {
+      const res = await apiClient.post<CouponValidateResult>('/coupons/validate', {
+        code,
+        subtotal,
+      });
+      return res.data;
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Checkout
+// ---------------------------------------------------------------------------
+
 export function useCheckout() {
   const qc = useQueryClient();
   return useMutation<CheckoutResultDto, Error, CheckoutBodyType>({
