@@ -69,11 +69,20 @@ export async function checkout(userId: string, input: CheckoutInput): Promise<Ch
         data: { stock: { decrement: item.qty } },
       });
       if (updated.count === 0) {
+        // Re-read stock after the failed update so the error reflects the
+        // committed value, not the SELECT-time snapshot which may be stale
+        // under concurrent checkouts (another tx may have decremented between
+        // our cart read and this updateMany).
+        const current = await tx.sku.findUnique({
+          where: { id: item.skuId },
+          select: { stock: true },
+        });
+        const available = current?.stock ?? 0;
         throw new AppError(
           ErrorCodes.OUT_OF_STOCK,
-          `庫存不足：${item.sku.code} 目前僅剩 ${item.sku.stock} 件`,
+          `庫存不足：${item.sku.code} 目前僅剩 ${available} 件`,
           409,
-          { skuId: item.skuId, available: item.sku.stock, requested: item.qty },
+          { skuId: item.skuId, available, requested: item.qty },
         );
       }
     }

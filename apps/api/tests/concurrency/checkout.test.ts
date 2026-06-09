@@ -17,6 +17,9 @@ import { issueAccessToken } from '../../src/services/authService.js';
  *
  * Setup:
  *   CONCURRENCY users, each with their own cart containing the SAME SKU (qty=1).
+ *   Giving each racer its own cart means the winning tx's cart.delete never
+ *   touches a loser's cart row — all losers read a non-empty cart, hit the
+ *   conditional stock decrement, and fail with 409 (not 400 CART_EMPTY).
  *   Stock is reset to 1 before every run so only one checkout can succeed.
  *
  * Expected invariants:
@@ -25,11 +28,10 @@ import { issueAccessToken } from '../../src/services/authService.js';
  *   3. Final SKU stock = 0  (no oversell, no phantom double-decrement).
  *   4. Exactly 1 Order row across all test users.
  *
- * Inversion check (manual, run when changing the guard):
- *   In checkoutService.ts, remove `stock: { gte: item.qty }` from the
- *   updateMany WHERE clause so stock is decremented unconditionally. Re-run
- *   this test — it MUST fail (stock ends up negative / multiple 201s). This
- *   confirms the test is actually exercising the guard, not just passing on luck.
+ * Inversion check (it.skip below — see T4.5 spec Verification):
+ *   Remove `stock: { gte: item.qty }` from checkoutService.ts updateMany WHERE
+ *   clause, then change it.skip to it. The skipped test MUST turn green (multiple
+ *   201s land), which proves the outer test is actually gated on the guard.
  */
 
 const app = createApp();
@@ -43,6 +45,13 @@ const SHIPPING_ADDR = {
   phone: '0900000000',
   city: '台北市',
   addr: '並發路1號',
+};
+const CHECKOUT_BODY = {
+  shippingAddress: SHIPPING_ADDR,
+  paymentMethod: 'mock_card',
+  // MANUAL skips the auto-payment setTimeout entirely (checkout.ts line ~25)
+  // so the timer never races against afterAll deletes.
+  outcomeMode: 'MANUAL',
 };
 
 let skuId: string;
@@ -71,7 +80,7 @@ beforeAll(async () => {
   skuId = sku.id;
 
   // Create CONCURRENCY independent users, each with their own access token.
-  // Carts are recreated per-test so stock + cart state are always clean.
+  // Carts are created in arrangeRacers() so stock + cart state are always clean.
   userIds = [];
   tokens = [];
   for (let i = 0; i < CONCURRENCY; i++) {
@@ -90,27 +99,25 @@ beforeAll(async () => {
   }
 });
 
-afterAll(async () => {
-  // Cascade-delete in FK dependency order.
+/** Delete all orders + carts written during a test run, in FK dependency order. */
+async function teardownOrders(): Promise<void> {
   await prisma.orderStatusLog.deleteMany({ where: { order: { userId: { in: userIds } } } });
   await prisma.paymentMock.deleteMany({ where: { order: { userId: { in: userIds } } } });
   await prisma.orderItem.deleteMany({ where: { order: { userId: { in: userIds } } } });
   await prisma.order.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.cart.deleteMany({ where: { userId: { in: userIds } } });
+}
+
+afterAll(async () => {
+  await teardownOrders();
   await prisma.sku.deleteMany({ where: { code: SKU_CODE } });
   await prisma.user.deleteMany({ where: { email: { endsWith: `@${EMAIL_DOMAIN}` } } });
   await prisma.$disconnect();
 });
 
-/** Reset state before each run: stock back to 1, fresh cart-per-user. */
-async function resetState(): Promise<void> {
-  // Wipe any orders from a previous run to keep count assertions clean.
-  await prisma.orderStatusLog.deleteMany({ where: { order: { userId: { in: userIds } } } });
-  await prisma.paymentMock.deleteMany({ where: { order: { userId: { in: userIds } } } });
-  await prisma.orderItem.deleteMany({ where: { order: { userId: { in: userIds } } } });
-  await prisma.order.deleteMany({ where: { userId: { in: userIds } } });
-  await prisma.cart.deleteMany({ where: { userId: { in: userIds } } });
-
+/** Restore stock=1 and give every racer a fresh cart before each race. */
+async function arrangeRacers(): Promise<void> {
+  await teardownOrders();
   await prisma.sku.update({ where: { id: skuId }, data: { stock: 1 } });
 
   for (const userId of userIds) {
@@ -122,7 +129,7 @@ async function resetState(): Promise<void> {
 }
 
 it(`${CONCURRENCY} concurrent checkouts on stock=1 — exactly 1 succeeds, rest get 409`, async () => {
-  await resetState();
+  await arrangeRacers();
 
   // All CONCURRENCY requests dispatched in the same microtask tick so
   // they overlap at the DB transaction level.
@@ -131,13 +138,7 @@ it(`${CONCURRENCY} concurrent checkouts on stock=1 — exactly 1 succeeds, rest 
       request(app)
         .post('/api/checkout')
         .set('Authorization', `Bearer ${token}`)
-        // MANUAL disables the auto-payment timer so it doesn't fire during
-        // cleanup and race against afterAll deletes.
-        .send({
-          shippingAddress: SHIPPING_ADDR,
-          paymentMethod: 'mock_card',
-          outcomeMode: 'MANUAL',
-        }),
+        .send(CHECKOUT_BODY),
     ),
   );
 
@@ -145,12 +146,15 @@ it(`${CONCURRENCY} concurrent checkouts on stock=1 — exactly 1 succeeds, rest 
   const failures = responses.filter((r) => r.status !== 201);
 
   // Invariant 1: exactly one order placed
-  expect(successes).toHaveLength(1);
+  expect(
+    successes,
+    `expected 1 success, got ${successes.length}; all statuses: ${responses.map((r) => r.status)}`,
+  ).toHaveLength(1);
 
   // Invariant 2: all failures are 409 OUT_OF_STOCK (not 500, not 400 CART_EMPTY)
   expect(failures).toHaveLength(CONCURRENCY - 1);
   for (const f of failures) {
-    expect(f.status).toBe(409);
+    expect(f.status, `unexpected failure status; body: ${JSON.stringify(f.body)}`).toBe(409);
     expect(f.body.error.code).toBe('OUT_OF_STOCK');
   }
 
@@ -162,3 +166,32 @@ it(`${CONCURRENCY} concurrent checkouts on stock=1 — exactly 1 succeeds, rest 
   const orderCount = await prisma.order.count({ where: { userId: { in: userIds } } });
   expect(orderCount).toBe(1);
 }, 15_000);
+
+// ---------------------------------------------------------------------------
+// Inversion check (T4.5 spec Verification — skipped by default)
+//
+// To verify the guard is load-bearing:
+//   1. In checkoutService.ts, remove `stock: { gte: item.qty }` from the
+//      updateMany WHERE clause so stock is decremented unconditionally.
+//   2. Change `it.skip` below to `it` and re-run this file.
+//   3. This test MUST turn GREEN (multiple 201s are returned), which proves
+//      that the outer test would have turned RED — i.e., the conditional WHERE
+//      is what prevents oversell, not coincidental serialisation.
+// ---------------------------------------------------------------------------
+it.skip('INVERSION: without stock guard, multiple concurrent checkouts succeed', async () => {
+  await arrangeRacers();
+
+  const responses = await Promise.all(
+    tokens.map((token) =>
+      request(app)
+        .post('/api/checkout')
+        .set('Authorization', `Bearer ${token}`)
+        .send(CHECKOUT_BODY),
+    ),
+  );
+
+  const successes = responses.filter((r) => r.status === 201);
+  // With the guard removed, multiple requests win — this expect passes (green)
+  // which proves the outer test depends on the guard to stay green.
+  expect(successes.length).toBeGreaterThan(1);
+});
