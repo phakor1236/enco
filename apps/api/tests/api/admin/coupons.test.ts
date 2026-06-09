@@ -10,8 +10,9 @@ import { issueAccessToken } from '../../../src/services/authService.js';
  *   - GET /api/admin/coupons → cursor-paginated list
  *   - POST /api/admin/coupons → create + AdminActionLog
  *   - PATCH /api/admin/coupons/:id → update + AdminActionLog
- *   - DELETE /api/admin/coupons/:id → hard delete (204) + AdminActionLog
+ *   - DELETE /api/admin/coupons/:id → hard delete (204) + AdminActionLog (SUPER_ADMIN only)
  *   - DELETE with usages → 409 COUPON_IN_USE
+ *   - PERCENT value > 100 → 422 VALIDATION_ERROR
  *   - Customer → 403; demo write → 403 DEMO_ACCOUNT_READONLY
  */
 
@@ -23,10 +24,15 @@ const CODE_PREFIX = 'T65-';
 
 let adminId: string;
 let adminToken: string;
+let superAdminId: string;
+let superAdminToken: string;
 let customerToken: string;
 let demoToken: string;
 
 beforeAll(async () => {
+  const { seedCatalog } = await import('../../../prisma/seed/products.js');
+  await seedCatalog();
+
   const admin = await prisma.user.upsert({
     where: { email: `admin@${EMAIL_DOMAIN}` },
     update: {},
@@ -34,6 +40,14 @@ beforeAll(async () => {
   });
   adminId = admin.id;
   adminToken = issueAccessToken({ id: admin.id, role: admin.role });
+
+  const superAdmin = await prisma.user.upsert({
+    where: { email: `super@${EMAIL_DOMAIN}` },
+    update: {},
+    create: { email: `super@${EMAIL_DOMAIN}`, passwordHash: DUMMY_HASH, role: 'SUPER_ADMIN' },
+  });
+  superAdminId = superAdmin.id;
+  superAdminToken = issueAccessToken({ id: superAdmin.id, role: superAdmin.role });
 
   const customer = await prisma.user.upsert({
     where: { email: `customer@${EMAIL_DOMAIN}` },
@@ -70,7 +84,10 @@ afterAll(async () => {
   });
   const testOrderIds = testOrders.map((o) => o.id);
 
-  await prisma.adminActionLog.deleteMany({ where: { actorId: adminId } });
+  // Scope audit log cleanup to coupon-type actions from this suite's actors.
+  await prisma.adminActionLog.deleteMany({
+    where: { actorId: { in: [adminId, superAdminId] }, resourceType: 'coupon' },
+  });
   await prisma.couponUsage.deleteMany({ where: { couponId: { in: couponIds } } });
   await prisma.orderStatusLog.deleteMany({ where: { orderId: { in: testOrderIds } } });
   await prisma.paymentMock.deleteMany({ where: { orderId: { in: testOrderIds } } });
@@ -95,6 +112,20 @@ describe('auth gates', () => {
     const res = await request(app)
       .get('/api/admin/coupons')
       .set('Authorization', `Bearer ${customerToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('ADMIN cannot DELETE (SUPER_ADMIN only) → 403', async () => {
+    // Create a coupon for the test, then try to delete with ADMIN token.
+    const createRes = await request(app)
+      .post('/api/admin/coupons')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ code: `${CODE_PREFIX}AUTH-DEL-${Date.now()}`, type: 'FIXED', value: '5.00' });
+    const couponId = createRes.body.id as string;
+
+    const res = await request(app)
+      .delete(`/api/admin/coupons/${couponId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(403);
   });
 
@@ -124,12 +155,15 @@ describe('POST /api/admin/coupons', () => {
     expect(res.body.value).toBe('50.00');
     expect(res.body.usageLimit).toBe(100);
 
+    const couponId = res.body.id as string;
     const log = await prisma.adminActionLog.findFirst({
-      where: { actorId: adminId, resourceType: 'coupon', action: 'create' },
+      where: { actorId: adminId, resourceType: 'coupon', resourceId: couponId, action: 'create' },
     });
     expect(log).not.toBeNull();
     const diff = log!.diff as Record<string, unknown>;
     expect(diff['code']).toBe(code);
+    // Full body should be in the diff.
+    expect(diff['usageLimit']).toBe(100);
   });
 
   it('creates a PERCENT coupon with date window', async () => {
@@ -153,7 +187,16 @@ describe('POST /api/admin/coupons', () => {
     expect(res.body.endsAt).toBeTruthy();
   });
 
-  it('409 on duplicate code', async () => {
+  it('400 VALIDATION_ERROR when PERCENT value > 100', async () => {
+    const res = await request(app)
+      .post('/api/admin/coupons')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ code: `${CODE_PREFIX}OVER100`, type: 'PERCENT', value: '150.00' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('409 VALIDATION_ERROR on duplicate code', async () => {
     const code = `${CODE_PREFIX}DUP-${Date.now()}`;
     await request(app)
       .post('/api/admin/coupons')
@@ -166,6 +209,7 @@ describe('POST /api/admin/coupons', () => {
       .send({ code, type: 'FIXED', value: '5.00' });
 
     expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 });
 
@@ -218,7 +262,7 @@ describe('PATCH /api/admin/coupons/:id', () => {
     expect(res.body.error.code).toBe('COUPON_NOT_FOUND');
   });
 
-  it('clears optional fields with null', async () => {
+  it('clears usageLimit, startsAt, and endsAt with null', async () => {
     const createRes = await request(app)
       .post('/api/admin/coupons')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -227,16 +271,20 @@ describe('PATCH /api/admin/coupons/:id', () => {
         type: 'FIXED',
         value: '10.00',
         usageLimit: 5,
+        startsAt: '2026-01-01T00:00:00.000Z',
+        endsAt: '2026-12-31T23:59:59.000Z',
       });
     const couponId = createRes.body.id as string;
 
     const res = await request(app)
       .patch(`/api/admin/coupons/${couponId}`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ usageLimit: null });
+      .send({ usageLimit: null, startsAt: null, endsAt: null });
 
     expect(res.status).toBe(200);
     expect(res.body.usageLimit).toBeNull();
+    expect(res.body.startsAt).toBeNull();
+    expect(res.body.endsAt).toBeNull();
   });
 });
 
@@ -252,7 +300,7 @@ describe('DELETE /api/admin/coupons/:id', () => {
 
     const res = await request(app)
       .delete(`/api/admin/coupons/${couponId}`)
-      .set('Authorization', `Bearer ${adminToken}`);
+      .set('Authorization', `Bearer ${superAdminToken}`);
 
     expect(res.status).toBe(204);
 
@@ -260,22 +308,24 @@ describe('DELETE /api/admin/coupons/:id', () => {
     expect(gone).toBeNull();
 
     const log = await prisma.adminActionLog.findFirst({
-      where: { actorId: adminId, resourceType: 'coupon', resourceId: couponId, action: 'delete' },
+      where: {
+        actorId: superAdminId,
+        resourceType: 'coupon',
+        resourceId: couponId,
+        action: 'delete',
+      },
     });
     expect(log).not.toBeNull();
   });
 
   it('409 COUPON_IN_USE when coupon has usages', async () => {
-    // Create coupon and a fake usage directly in the DB.
     const createRes = await request(app)
       .post('/api/admin/coupons')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ code: `${CODE_PREFIX}INUSE-${Date.now()}`, type: 'FIXED', value: '5.00' });
     const couponId = createRes.body.id as string;
 
-    // We need a user + order to attach the usage. Use the existing admin user.
-    const { seedCatalog } = await import('../../../prisma/seed/products.js');
-    await seedCatalog();
+    // Create an order + coupon usage directly in DB.
     const product = await prisma.product.findFirstOrThrow({
       where: { status: 'ACTIVE' },
       select: { id: true },
@@ -316,7 +366,7 @@ describe('DELETE /api/admin/coupons/:id', () => {
 
     const res = await request(app)
       .delete(`/api/admin/coupons/${couponId}`)
-      .set('Authorization', `Bearer ${adminToken}`);
+      .set('Authorization', `Bearer ${superAdminToken}`);
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('COUPON_IN_USE');
@@ -325,7 +375,7 @@ describe('DELETE /api/admin/coupons/:id', () => {
   it('404 on unknown id', async () => {
     const res = await request(app)
       .delete('/api/admin/coupons/nonexistent')
-      .set('Authorization', `Bearer ${adminToken}`);
+      .set('Authorization', `Bearer ${superAdminToken}`);
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('COUPON_NOT_FOUND');
   });

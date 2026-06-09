@@ -15,6 +15,8 @@ export const adminCouponsRouter: RouterType = Router();
 
 const adminGuard = [requireAuth, requireRole('ADMIN', 'SUPER_ADMIN')];
 const writeGuard = [requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), demoReadonly];
+// Hard-delete is irreversible financial data — gate it to SUPER_ADMIN like refunds.
+const superWriteGuard = [requireAuth, requireRole('SUPER_ADMIN'), demoReadonly];
 
 // ── Body / query schemas ──────────────────────────────────────────────────────
 
@@ -22,19 +24,24 @@ const MoneyString = z
   .string()
   .regex(/^\d+(\.\d{1,2})?$/, 'decimal string with at most 2 fraction digits');
 
-const CreateCouponBodySchema = z.object({
-  code: z
-    .string()
-    .min(1)
-    .max(50)
-    .regex(/^[A-Z0-9_-]+$/, 'uppercase alphanumeric with _ and -'),
-  type: z.enum(['FIXED', 'PERCENT']),
-  value: MoneyString,
-  minAmount: MoneyString.optional(),
-  startsAt: z.string().datetime().optional(),
-  endsAt: z.string().datetime().optional(),
-  usageLimit: z.number().int().positive().optional(),
-});
+const CreateCouponBodySchema = z
+  .object({
+    code: z
+      .string()
+      .min(1)
+      .max(50)
+      .regex(/^[A-Z0-9_-]+$/, 'uppercase alphanumeric with _ and -'),
+    type: z.enum(['FIXED', 'PERCENT']),
+    value: MoneyString,
+    minAmount: MoneyString.optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+    usageLimit: z.number().int().positive().optional(),
+  })
+  .refine((obj) => obj.type !== 'PERCENT' || parseFloat(obj.value) <= 100, {
+    message: 'PERCENT coupon value must be ≤ 100',
+    path: ['value'],
+  });
 
 const UpdateCouponBodySchema = z
   .object({
@@ -51,7 +58,14 @@ const UpdateCouponBodySchema = z
     endsAt: z.string().datetime().nullable().optional(),
     usageLimit: z.number().int().positive().nullable().optional(),
   })
-  .refine((obj) => Object.keys(obj).length > 0, 'at least one field is required');
+  .refine((obj) => Object.keys(obj).length > 0, 'at least one field is required')
+  .refine(
+    (obj) => {
+      if (obj.type !== 'PERCENT' || obj.value === undefined) return true;
+      return parseFloat(obj.value) <= 100;
+    },
+    { message: 'PERCENT coupon value must be ≤ 100', path: ['value'] },
+  );
 
 const AdminCouponListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -123,7 +137,7 @@ adminCouponsRouter.post(
           resourceType: 'coupon',
           resourceId: id,
           action: 'create',
-          diff: { code: body.code, type: body.type, value: body.value },
+          diff: { ...body } as Prisma.InputJsonObject,
           ip: req.ip ?? undefined,
           userAgent: req.get('user-agent') ?? undefined,
         },
@@ -184,35 +198,41 @@ adminCouponsRouter.patch(
 );
 
 // ── DELETE /api/admin/coupons/:id ─────────────────────────────────────────────
+// SUPER_ADMIN only — hard-delete of financial data is irreversible.
 
-adminCouponsRouter.delete('/:id', ...writeGuard, async (req, res, next) => {
+adminCouponsRouter.delete('/:id', ...superWriteGuard, async (req, res, next) => {
   try {
     const id = req.params['id'] as string;
 
-    const coupon = await prisma.coupon.findUnique({
-      where: { id },
-      select: { id: true, code: true, _count: { select: { usages: true } } },
-    });
-    if (!coupon) throw new AppError(ErrorCodes.COUPON_NOT_FOUND, 'Coupon not found', 404);
-    if (coupon._count.usages > 0) {
-      throw new AppError(
-        ErrorCodes.COUPON_IN_USE,
-        'Cannot delete a coupon that has been used',
-        409,
-      );
-    }
-
+    // diffPayload is populated inside coreLogic so the usage check and the
+    // delete share the same transaction — no concurrent usage can slip through.
+    const diffPayload: Record<string, unknown> = {};
     await withAuditLog<Coupon>(
       {
         actorId: req.user!.id,
         resourceType: 'coupon',
         resourceId: id,
         action: 'delete',
-        diff: { code: coupon.code },
+        diff: diffPayload as Prisma.InputJsonObject,
         ip: req.ip ?? undefined,
         userAgent: req.get('user-agent') ?? undefined,
       },
-      (tx) => tx.coupon.delete({ where: { id } }),
+      async (tx) => {
+        const coupon = await tx.coupon.findUnique({
+          where: { id },
+          select: { id: true, code: true, _count: { select: { usages: true } } },
+        });
+        if (!coupon) throw new AppError(ErrorCodes.COUPON_NOT_FOUND, 'Coupon not found', 404);
+        if (coupon._count.usages > 0) {
+          throw new AppError(
+            ErrorCodes.COUPON_IN_USE,
+            'Cannot delete a coupon that has been used',
+            409,
+          );
+        }
+        diffPayload['code'] = coupon.code;
+        return tx.coupon.delete({ where: { id } });
+      },
     );
 
     res.status(204).end();
