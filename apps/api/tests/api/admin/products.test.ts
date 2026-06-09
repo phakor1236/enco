@@ -231,6 +231,26 @@ describe('DELETE /api/admin/products/:id (soft archive)', () => {
     const diff = log!.diff as Record<string, Record<string, unknown>>;
     expect(diff['after']?.['status']).toBe('ARCHIVED');
   });
+
+  it('409 PRODUCT_ALREADY_ARCHIVED on second DELETE', async () => {
+    const slug = `${SLUG_PREFIX}double-archive-${Date.now()}`;
+    const createRes = await request(app)
+      .post('/api/admin/products')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Archive Twice', slug, categoryId, basePrice: '50.00', status: 'ACTIVE' });
+    expect(createRes.status).toBe(201);
+    const productId: string = createRes.body.id;
+
+    await request(app)
+      .delete(`/api/admin/products/${productId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const res = await request(app)
+      .delete(`/api/admin/products/${productId}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('PRODUCT_ALREADY_ARCHIVED');
+  });
 });
 
 // ── POST /api/admin/skus/:id/adjust-stock ────────────────────────────────────
@@ -295,6 +315,32 @@ describe('POST /api/admin/skus/:skuId/adjust-stock', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ delta: -9999 });
     expect(res.status).toBe(409);
+  });
+
+  it('decreases stock + writes AdminActionLog', async () => {
+    // First increase to a known level so the decrease is safe.
+    const increaseRes = await request(app)
+      .post(`/api/admin/skus/${skuId}/adjust-stock`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ delta: 20 });
+    expect(increaseRes.status).toBe(200);
+    const stockBefore: number = increaseRes.body.stock;
+
+    const res = await request(app)
+      .post(`/api/admin/skus/${skuId}/adjust-stock`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ delta: -3 });
+    expect(res.status).toBe(200);
+    expect(res.body.stock).toBe(stockBefore - 3);
+
+    const log = await prisma.adminActionLog.findFirst({
+      where: { actorId: adminId, resourceType: 'sku', resourceId: skuId, action: 'adjust_stock' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(log).not.toBeNull();
+    const diff = log!.diff as Record<string, unknown>;
+    expect(diff['delta']).toBe(-3);
+    expect(diff['after']).toEqual({ stock: stockBefore - 3 });
   });
 
   it('400 on delta=0', async () => {

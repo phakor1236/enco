@@ -48,6 +48,7 @@ export const ErrorCodes = {
 
   // ---- Phase 6 Admin -------------------------------------------------------
   DEMO_ACCOUNT_READONLY: 'DEMO_ACCOUNT_READONLY',
+  PRODUCT_ALREADY_ARCHIVED: 'PRODUCT_ALREADY_ARCHIVED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

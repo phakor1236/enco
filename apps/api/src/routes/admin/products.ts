@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Router, type Router as RouterType } from 'express';
-import type { Product, Sku } from '@prisma/client';
+import type { Prisma, Product, Sku } from '@prisma/client';
 import { z } from 'zod';
 import { ErrorCodes } from '@app/shared';
 
@@ -156,6 +156,8 @@ adminProductsRouter.post(
           resourceId: id,
           action: 'create',
           diff: { name: body.name, slug: body.slug, status: body.status },
+          ip: req.ip ?? undefined,
+          userAgent: req.get('user-agent') ?? undefined,
         },
         (tx) => tx.product.create({ data: { id, ...body } }),
       );
@@ -176,7 +178,7 @@ adminProductsRouter.patch(
   async (req, res, next) => {
     try {
       // Spread middleware widens req.params to Record<string,string|string[]|undefined>;
-      // cast to string here — the route pattern guarantees it is always a string.
+      // cast to string — the route pattern guarantees it is always a string.
       const id = req.params['id'] as string;
       const data = req.body as z.infer<typeof UpdateProductBodySchema>;
 
@@ -201,6 +203,8 @@ adminProductsRouter.patch(
             },
             after: data,
           },
+          ip: req.ip ?? undefined,
+          userAgent: req.get('user-agent') ?? undefined,
         },
         (tx) => tx.product.update({ where: { id }, data }),
       );
@@ -224,7 +228,7 @@ adminProductsRouter.delete('/:id', ...writeGuard, async (req, res, next) => {
     });
     if (!before) throw new AppError(ErrorCodes.PRODUCT_NOT_FOUND, 'Product not found', 404);
     if (before.status === 'ARCHIVED') {
-      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Product is already archived', 409);
+      throw new AppError(ErrorCodes.PRODUCT_ALREADY_ARCHIVED, 'Product is already archived', 409);
     }
 
     await withAuditLog<Product>(
@@ -234,6 +238,8 @@ adminProductsRouter.delete('/:id', ...writeGuard, async (req, res, next) => {
         resourceId: id,
         action: 'archive',
         diff: { before: { status: before.status }, after: { status: 'ARCHIVED' } },
+        ip: req.ip ?? undefined,
+        userAgent: req.get('user-agent') ?? undefined,
       },
       (tx) => tx.product.update({ where: { id }, data: { status: 'ARCHIVED' } }),
     );
@@ -255,16 +261,13 @@ adminSkusRouter.post(
       const skuId = req.params['skuId'] as string;
       const { delta } = req.body as z.infer<typeof AdjustStockBodySchema>;
 
-      const sku = await prisma.sku.findUnique({ where: { id: skuId } });
-      if (!sku) throw new AppError(ErrorCodes.SKU_NOT_FOUND, 'SKU not found', 404);
+      // Verify existence before entering the tx for a clean 404 error code.
+      const skuExists = await prisma.sku.findUnique({ where: { id: skuId }, select: { id: true } });
+      if (!skuExists) throw new AppError(ErrorCodes.SKU_NOT_FOUND, 'SKU not found', 404);
 
-      const newStock = sku.stock + delta;
-      if (newStock < 0) {
-        throw new AppError(ErrorCodes.OUT_OF_STOCK, 'Adjusted stock cannot be negative', 409, {
-          current: sku.stock,
-          delta,
-        });
-      }
+      // Mutable payload — coreLogic populates before/after inside the tx.
+      // withAuditLog reads ctx.diff AFTER coreLogic completes, so this is safe.
+      const diffPayload: Record<string, unknown> = { delta };
 
       const updated = await withAuditLog<Sku>(
         {
@@ -272,9 +275,40 @@ adminSkusRouter.post(
           resourceType: 'sku',
           resourceId: skuId,
           action: 'adjust_stock',
-          diff: { before: { stock: sku.stock }, after: { stock: newStock }, delta },
+          diff: diffPayload as Prisma.InputJsonObject,
+          ip: req.ip ?? undefined,
+          userAgent: req.get('user-agent') ?? undefined,
         },
-        (tx) => tx.sku.update({ where: { id: skuId }, data: { stock: newStock } }),
+        async (tx) => {
+          // Read current stock inside the tx (READ COMMITTED — latest committed state).
+          const current = await tx.sku.findUniqueOrThrow({
+            where: { id: skuId },
+            select: { stock: true },
+          });
+
+          // Atomic conditional increment: WHERE stock + delta >= 0 prevents negative stock
+          // under concurrent admin writes (the WHERE is evaluated at the DB level on the
+          // locked row, unlike a pre-read → compare → write pattern which has TOCTOU).
+          const result = await tx.sku.updateMany({
+            where: { id: skuId, stock: { gte: delta < 0 ? -delta : 0 } },
+            data: { stock: { increment: delta } },
+          });
+
+          if (result.count === 0) {
+            throw new AppError(ErrorCodes.OUT_OF_STOCK, 'Adjusted stock cannot be negative', 409, {
+              current: current.stock,
+              delta,
+            });
+          }
+
+          const freshSku = await tx.sku.findUniqueOrThrow({ where: { id: skuId } });
+
+          // Populate diff after we have both before and after values.
+          diffPayload['before'] = { stock: current.stock };
+          diffPayload['after'] = { stock: freshSku.stock };
+
+          return freshSku;
+        },
       );
 
       res.json({ skuId: updated.id, stock: updated.stock });
