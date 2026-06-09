@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { prisma } from '../lib/db.js';
+import { prisma, type DbClient } from '../lib/db.js';
 
 // Only PAID/SHIPPED/COMPLETED orders count as "sold".
 // PENDING hasn't been paid; CANCELLED/REFUNDED reverse the sale.
@@ -15,9 +15,9 @@ export type ProductRow = {
   revenue: string;
 };
 
-export async function getDailyReport(days: number): Promise<DailyRow[]> {
+export async function getDailyReport(days: number, db: DbClient = prisma): Promise<DailyRow[]> {
   type Raw = { date: Date; order_count: bigint; revenue: Prisma.Decimal };
-  const rows = await prisma.$queryRaw<Raw[]>`
+  const rows = await db.$queryRaw<Raw[]>`
     SELECT
       DATE(created_at)      AS date,
       COUNT(*)::bigint      AS order_count,
@@ -31,13 +31,16 @@ export async function getDailyReport(days: number): Promise<DailyRow[]> {
   return rows.map((r) => ({
     date: r.date.toISOString().slice(0, 10),
     orderCount: Number(r.order_count),
-    revenue: Number(r.revenue).toFixed(2),
+    revenue: r.revenue.toFixed(2),
   }));
 }
 
-export async function getMonthlyReport(months: number): Promise<MonthlyRow[]> {
+export async function getMonthlyReport(
+  months: number,
+  db: DbClient = prisma,
+): Promise<MonthlyRow[]> {
   type Raw = { month: Date; order_count: bigint; revenue: Prisma.Decimal };
-  const rows = await prisma.$queryRaw<Raw[]>`
+  const rows = await db.$queryRaw<Raw[]>`
     SELECT
       DATE_TRUNC('month', created_at) AS month,
       COUNT(*)::bigint                AS order_count,
@@ -51,15 +54,14 @@ export async function getMonthlyReport(months: number): Promise<MonthlyRow[]> {
   return rows.map((r) => ({
     month: r.month.toISOString().slice(0, 7),
     orderCount: Number(r.order_count),
-    revenue: Number(r.revenue).toFixed(2),
+    revenue: r.revenue.toFixed(2),
   }));
 }
 
-export async function getByProductReport(opts: {
-  limit: number;
-  startDate?: Date;
-  endDate?: Date;
-}): Promise<ProductRow[]> {
+export async function getByProductReport(
+  opts: { limit: number; startDate?: Date; endDate?: Date },
+  db: DbClient = prisma,
+): Promise<ProductRow[]> {
   type Raw = {
     product_id: string;
     product_name: string;
@@ -70,9 +72,10 @@ export async function getByProductReport(opts: {
   const startFilter = opts.startDate
     ? Prisma.sql`AND o.created_at >= ${opts.startDate}`
     : Prisma.sql``;
-  const endFilter = opts.endDate ? Prisma.sql`AND o.created_at <= ${opts.endDate}` : Prisma.sql``;
+  // endDate is an exclusive upper bound (start of the day AFTER the requested endDate)
+  const endFilter = opts.endDate ? Prisma.sql`AND o.created_at < ${opts.endDate}` : Prisma.sql``;
 
-  const rows = await prisma.$queryRaw<Raw[]>`
+  const rows = await db.$queryRaw<Raw[]>`
     SELECT
       p.id                           AS product_id,
       p.name                         AS product_name,
@@ -93,6 +96,6 @@ export async function getByProductReport(opts: {
     productId: r.product_id,
     productName: r.product_name,
     totalQty: Number(r.total_qty),
-    revenue: Number(r.revenue).toFixed(2),
+    revenue: r.revenue.toFixed(2),
   }));
 }

@@ -23,11 +23,16 @@ const MonthlyQuerySchema = z.object({
   months: z.coerce.number().int().min(1).max(24).default(12),
 });
 
-const ByProductQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  startDate: z.string().date().optional(),
-  endDate: z.string().date().optional(),
-});
+const ByProductQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    startDate: z.string().date().optional(),
+    endDate: z.string().date().optional(),
+  })
+  .refine((d) => !d.startDate || !d.endDate || d.startDate <= d.endDate, {
+    message: 'startDate must not be after endDate',
+    path: ['startDate'],
+  });
 
 // ── GET /api/admin/reports/daily ──────────────────────────────────────────────
 
@@ -76,10 +81,18 @@ adminReportsRouter.get(
       const { limit, startDate, endDate } = (
         req as unknown as { validatedQuery: z.infer<typeof ByProductQuerySchema> }
       ).validatedQuery;
+      // Compute exclusive upper bound: midnight UTC at the start of the day AFTER endDate.
+      // This makes the range [startDate, endDate] fully inclusive regardless of time zone.
+      let endDateBound: Date | undefined;
+      if (endDate) {
+        const d = new Date(endDate + 'T00:00:00.000Z');
+        d.setUTCDate(d.getUTCDate() + 1);
+        endDateBound = d;
+      }
       const rows = await getByProductReport({
         limit,
-        startDate: startDate ? new Date(startDate) : undefined,
-        endDate: endDate ? new Date(endDate + 'T23:59:59.999Z') : undefined,
+        startDate: startDate ? new Date(startDate + 'T00:00:00.000Z') : undefined,
+        endDate: endDateBound,
       });
       res.json({ rows });
     } catch (e) {

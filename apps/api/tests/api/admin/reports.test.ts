@@ -24,9 +24,12 @@ const SHIPPING_ADDR = { name: 'Test', phone: '0912345678', city: 'Taipei', addr:
 let adminToken: string;
 let customerToken: string;
 
-// Track order IDs and SKU IDs for cleanup.
+// Dedicated product for exact revenue assertions (isolated from other test suites).
+let seededProductId: string;
+
 const createdOrderIds: string[] = [];
 const createdSkuIds: string[] = [];
+const createdProductIds: string[] = [];
 
 beforeAll(async () => {
   const { seedCatalog } = await import('../../../prisma/seed/products.js');
@@ -46,16 +49,25 @@ beforeAll(async () => {
   });
   customerToken = issueAccessToken({ id: customer.id, role: customer.role });
 
-  // Seed orders with known totals so the report assertions are deterministic.
-  const product = await prisma.product.findFirstOrThrow({
-    where: { status: 'ACTIVE' },
-    select: { id: true },
+  // Create a dedicated product so revenue assertions are fully isolated.
+  const category = await prisma.category.findFirstOrThrow({ select: { id: true } });
+  const testProduct = await prisma.product.create({
+    data: {
+      name: 'T66 Reports Test Product',
+      slug: `t66-report-product-${Date.now()}`,
+      description: '',
+      basePrice: '100.00',
+      status: 'ACTIVE',
+      categoryId: category.id,
+    },
   });
+  seededProductId = testProduct.id;
+  createdProductIds.push(testProduct.id);
 
   const skuA = await prisma.sku.create({
     data: {
-      productId: product.id,
-      code: `${SKU_PREFIX}A`,
+      productId: testProduct.id,
+      code: `${SKU_PREFIX}A-${Date.now()}`,
       price: '100.00',
       stock: 50,
       optionCombination: {},
@@ -65,8 +77,8 @@ beforeAll(async () => {
 
   const skuB = await prisma.sku.create({
     data: {
-      productId: product.id,
-      code: `${SKU_PREFIX}B`,
+      productId: testProduct.id,
+      code: `${SKU_PREFIX}B-${Date.now()}`,
       price: '200.00',
       stock: 50,
       optionCombination: {},
@@ -116,6 +128,7 @@ afterAll(async () => {
   await prisma.orderItem.deleteMany({ where: { orderId: { in: createdOrderIds } } });
   await prisma.order.deleteMany({ where: { id: { in: createdOrderIds } } });
   await prisma.sku.deleteMany({ where: { id: { in: createdSkuIds } } });
+  await prisma.product.deleteMany({ where: { id: { in: createdProductIds } } });
   await prisma.user.deleteMany({ where: { email: { endsWith: `@${EMAIL_DOMAIN}` } } });
   await prisma.$disconnect();
 });
@@ -164,24 +177,8 @@ describe('GET /api/admin/reports/daily', () => {
     expect(res.status).toBe(200);
     const rows = res.body.rows as { date: string; orderCount: number; revenue: string }[];
     const todayRevenue = rows.reduce((sum, r) => sum + parseFloat(r.revenue), 0);
-    // Seeded 400, DB may have more from other test suites sharing the test DB.
+    // Seeded 400; DB may have more from other test suites sharing the test DB.
     expect(todayRevenue).toBeGreaterThanOrEqual(400);
-  });
-
-  it('CANCELLED order is excluded from revenue', async () => {
-    // The CANCELLED order has total 100. If included, today's sum would be 500+.
-    // We assert it's >= 400 not >= 500, so this test verifies inclusion by its
-    // absence (the seeded PAID total is exactly 400).
-    const res = await request(app)
-      .get('/api/admin/reports/daily?days=1')
-      .set('Authorization', `Bearer ${adminToken}`);
-
-    const rows = res.body.rows as { revenue: string }[];
-    // If cancelled were included it would push the sum above what PAID alone gives.
-    // We can't assert exact equality because other test suites may have seeded
-    // more PAID orders today, so we just verify the endpoint succeeds.
-    expect(res.status).toBe(200);
-    expect(rows).toBeDefined();
   });
 });
 
@@ -230,15 +227,18 @@ describe('GET /api/admin/reports/by-product', () => {
     }
   });
 
-  it('seeded product revenue is at least 400.00', async () => {
+  it('CANCELLED order is excluded — seeded product revenue is exactly 400.00', async () => {
+    // Uses the dedicated seededProductId so the assertion is isolated from other test suites.
+    // 3 PAID orders total NT$400; 1 CANCELLED (NT$100) must NOT be counted.
     const res = await request(app)
-      .get('/api/admin/reports/by-product?limit=50')
+      .get('/api/admin/reports/by-product?limit=100')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    const rows = res.body.rows as { revenue: string }[];
-    const totalRevenue = rows.reduce((sum, r) => sum + parseFloat(r.revenue), 0);
-    expect(totalRevenue).toBeGreaterThanOrEqual(400);
+    const rows = res.body.rows as { productId: string; revenue: string }[];
+    const seededRow = rows.find((r) => r.productId === seededProductId);
+    expect(seededRow).toBeDefined();
+    expect(parseFloat(seededRow!.revenue)).toBe(400);
   });
 
   it('date filter narrows results', async () => {
@@ -249,5 +249,13 @@ describe('GET /api/admin/reports/by-product', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.rows).toHaveLength(0);
+  });
+
+  it('400 when startDate is after endDate', async () => {
+    const res = await request(app)
+      .get('/api/admin/reports/by-product?startDate=2099-01-02&endDate=2099-01-01')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(400);
   });
 });
