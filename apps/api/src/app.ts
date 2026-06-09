@@ -13,6 +13,7 @@ import { errorMiddleware } from './middleware/error.js';
 import { authRouter } from './routes/auth.js';
 import { cartRouter } from './routes/cart.js';
 import { checkoutRouter } from './routes/checkout.js';
+import { couponsRouter } from './routes/coupons.js';
 import { healthRouter } from './routes/health.js';
 import { ordersRouter } from './routes/orders.js';
 import { categoriesRouter, productsRouter } from './routes/products.js';
@@ -52,6 +53,7 @@ export function createApp(): Express {
   app.use('/api/products', productsRouter);
   app.use('/api/cart', cartRouter);
   app.use('/api/checkout', checkoutRouter);
+  app.use('/api/coupons', couponsRouter);
   app.use('/api/orders', ordersRouter);
   app.use('/api/webhooks', webhooksRouter);
   app.use('/api', healthRouter);

@@ -27,6 +27,12 @@ export {
   type ShippingAddress,
 } from './checkout.js';
 export {
+  CouponValidateBodySchema,
+  CouponValidateResultSchema,
+  type CouponValidateBody,
+  type CouponValidateResult,
+} from './coupon.js';
+export {
   CategoryDtoSchema,
   ProductImageDtoSchema,
   VariantDtoSchema,
