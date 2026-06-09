@@ -35,6 +35,7 @@ model User {
   carts                   Cart[]
   orders                  Order[]
   orderStatusLogsOperated OrderStatusLog[] @relation("OrderStatusLogOperator")
+  couponUsages            CouponUsage[]
 
   @@map("users")
 }
@@ -298,6 +299,7 @@ model Order {
   logs      OrderStatusLog[]
   payments  PaymentMock[]
   shipments ShipmentMock[]
+  couponUsage CouponUsage?
 
   // Drives "我的訂單" list (newest first) and sales reports (range scans).
   @@index([userId, createdAt(sort: Desc)])
@@ -370,6 +372,60 @@ model PaymentMock {
 
   @@index([orderId])
   @@map("payment_mocks")
+}
+
+// ============================================================================
+// T5.1 — Coupon + CouponUsage
+// ============================================================================
+
+/// Discount type: FIXED subtracts a flat amount; PERCENT takes `value`% off.
+/// `value` is always stored as-is — callers apply `Math.min(discount, subtotal)`
+/// so a 100% coupon never produces a negative total.
+enum CouponType {
+  FIXED
+  PERCENT
+}
+
+/// `usageLimit` null = unlimited (first-come-first-served up to users × 1).
+/// `minAmount` null = no minimum. `startsAt`/`endsAt` null = open-ended.
+/// The CHECK constraints enforcing `value > 0` and `usage_limit > 0` are
+/// added via raw SQL in the migration (Prisma can't express them declaratively).
+model Coupon {
+  id         String     @id @default(cuid())
+  code       String     @unique
+  type       CouponType
+  value      Decimal    @db.Decimal(10, 2)
+  minAmount  Decimal?   @map("min_amount") @db.Decimal(10, 2)
+  startsAt   DateTime?  @map("starts_at")
+  endsAt     DateTime?  @map("ends_at")
+  usageLimit Int?       @map("usage_limit")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  usages CouponUsage[]
+
+  @@map("coupons")
+}
+
+/// One row per (coupon, user) pair — UNIQUE enforces the one-per-user rule
+/// at the DB level so no service-layer retry can sneak a duplicate through.
+/// FK to Order is Cascade so cancelling an order also clears its usage row,
+/// allowing the user to reuse the coupon after a rollback or cancel.
+model CouponUsage {
+  id       String   @id @default(cuid())
+  couponId String   @map("coupon_id")
+  userId   String   @map("user_id")
+  orderId  String   @unique @map("order_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Core invariant: one use per (coupon, user). DB-level — not application-level.
+  @@unique([couponId, userId])
+  @@index([couponId])
+  @@map("coupon_usages")
 }
 
 /// Created during the PAID→SHIPPED transition (T4.2). The tracking number

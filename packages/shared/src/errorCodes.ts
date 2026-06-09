@@ -37,6 +37,14 @@ export const ErrorCodes = {
   CART_EMPTY: 'CART_EMPTY',
   INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
   ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
+
+  // ---- Phase 5 Coupon ------------------------------------------------------
+  COUPON_ALREADY_USED: 'COUPON_ALREADY_USED',
+  COUPON_BELOW_MIN: 'COUPON_BELOW_MIN',
+  COUPON_EXPIRED: 'COUPON_EXPIRED',
+  COUPON_LIMIT_REACHED: 'COUPON_LIMIT_REACHED',
+  COUPON_NOT_FOUND: 'COUPON_NOT_FOUND',
+  COUPON_NOT_STARTED: 'COUPON_NOT_STARTED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
