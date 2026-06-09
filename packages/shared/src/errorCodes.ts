@@ -34,6 +34,7 @@ export const ErrorCodes = {
   SKU_NOT_FOUND: 'SKU_NOT_FOUND',
 
   // ---- Phase 4 Checkout / Order -------------------------------------------
+  CART_EMPTY: 'CART_EMPTY',
   INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
   ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
 } as const;

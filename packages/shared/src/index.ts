@@ -19,6 +19,14 @@ export {
   type CartMergeResult,
 } from './cart.js';
 export {
+  CheckoutBody,
+  CheckoutResultDtoSchema,
+  ShippingAddressSchema,
+  type CheckoutBodyType,
+  type CheckoutResultDto,
+  type ShippingAddress,
+} from './checkout.js';
+export {
   CategoryDtoSchema,
   ProductImageDtoSchema,
   VariantDtoSchema,
