@@ -12,8 +12,11 @@ import { buildOpenApiDocument } from './lib/openapi.js';
 import { errorMiddleware } from './middleware/error.js';
 import { authRouter } from './routes/auth.js';
 import { cartRouter } from './routes/cart.js';
+import { checkoutRouter } from './routes/checkout.js';
 import { healthRouter } from './routes/health.js';
+import { ordersRouter } from './routes/orders.js';
 import { categoriesRouter, productsRouter } from './routes/products.js';
+import { webhooksRouter } from './routes/webhooks.js';
 
 export function createApp(): Express {
   const app = express();
@@ -48,6 +51,9 @@ export function createApp(): Express {
   app.use('/api/categories', categoriesRouter);
   app.use('/api/products', productsRouter);
   app.use('/api/cart', cartRouter);
+  app.use('/api/checkout', checkoutRouter);
+  app.use('/api/orders', ordersRouter);
+  app.use('/api/webhooks', webhooksRouter);
   app.use('/api', healthRouter);
 
   // OpenAPI docs — open in dev/test, gated by env flag in prod (SPEC §8).
