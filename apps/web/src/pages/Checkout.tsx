@@ -29,6 +29,7 @@ function apiErrorMessage(err: unknown): string {
     if (code === 'CART_EMPTY') return '購物車是空的，請先加入商品再結帳';
     if (code === 'OUT_OF_STOCK') return '部分商品庫存不足，請調整後再試';
     if (code === 'UNAUTHENTICATED') return '請先登入再結帳';
+    if (code === 'VALIDATION_ERROR') return '輸入資料格式有誤，請再確認';
   }
   return '結帳失敗，請稍後再試';
 }

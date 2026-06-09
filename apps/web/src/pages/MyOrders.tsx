@@ -201,7 +201,10 @@ function OrdersList(): JSX.Element {
         <div className="mt-6 flex items-center justify-center gap-3">
           <button
             type="button"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            onClick={() => {
+              setPage((p) => Math.max(1, p - 1));
+              setExpanded(null);
+            }}
             disabled={page === 1}
             className="rounded-full border border-line px-4 py-1.5 text-sm hover:bg-paper-2 disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -212,7 +215,10 @@ function OrdersList(): JSX.Element {
           </span>
           <button
             type="button"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            onClick={() => {
+              setPage((p) => Math.min(totalPages, p + 1));
+              setExpanded(null);
+            }}
             disabled={page === totalPages}
             className="rounded-full border border-line px-4 py-1.5 text-sm hover:bg-paper-2 disabled:opacity-40 disabled:cursor-not-allowed"
           >

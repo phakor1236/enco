@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import type { CheckoutBodyType, CheckoutResultDto } from '@app/shared';
 
 import { apiClient } from '../../lib/apiClient.js';
@@ -93,7 +93,10 @@ export function useOrders(page = 1) {
   });
 }
 
-export function useOrder(id: string) {
+export function useOrder(
+  id: string,
+  options?: Omit<UseQueryOptions<OrderDetail>, 'queryKey' | 'queryFn' | 'enabled'>,
+) {
   return useQuery<OrderDetail>({
     queryKey: orderKeys.detail(id),
     queryFn: async () => {
@@ -101,5 +104,6 @@ export function useOrder(id: string) {
       return res.data;
     },
     enabled: Boolean(id),
+    ...options,
   });
 }

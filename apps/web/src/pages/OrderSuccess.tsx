@@ -10,7 +10,9 @@ const STATUS_ZH: Record<string, string> = {
 
 export function OrderSuccessPage(): JSX.Element {
   const { orderId } = useParams<{ orderId: string }>();
-  const { data: order, isLoading } = useOrder(orderId ?? '');
+  const { data: order, isLoading } = useOrder(orderId ?? '', {
+    refetchInterval: (query) => (query.state.data?.status === 'PENDING' ? 1500 : false),
+  });
 
   return (
     <main className="mx-auto max-w-lg px-6 py-16 text-center">
