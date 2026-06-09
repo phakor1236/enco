@@ -44,6 +44,14 @@ export function AppShell(): JSX.Element {
                 >
                   我的訂單
                 </Link>
+                {(user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') && (
+                  <Link
+                    to="/admin"
+                    className="hidden sm:inline rounded-full px-4 py-1.5 hover:bg-paper-2 text-ink-soft"
+                  >
+                    後台
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={() => logout.mutate()}
