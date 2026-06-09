@@ -56,7 +56,7 @@ afterAll(async () => {
   await prisma.cart.deleteMany({ where: { userId } });
   await prisma.sku.deleteMany({ where: { code: { startsWith: SKU_PREFIX } } });
   await prisma.user.deleteMany({ where: { email: { endsWith: `@${EMAIL_DOMAIN}` } } });
-  await prisma.coupon.deleteMany({ where: { code: { startsWith: 'TESTT53-' } } });
+  await prisma.coupon.deleteMany({ where: { code: { startsWith: 'TESTT53-API-' } } });
   await prisma.$disconnect();
 });
 
@@ -106,7 +106,7 @@ async function createCoupon(overrides?: {
 }) {
   return prisma.coupon.create({
     data: {
-      code: overrides?.code ?? `TESTT53-${randomUUID().slice(0, 8)}`,
+      code: overrides?.code ?? `TESTT53-API-${randomUUID().slice(0, 8)}`,
       type: overrides?.type ?? 'FIXED',
       value: overrides?.value ?? '10.00',
       usageLimit: overrides?.usageLimit ?? null,
@@ -226,6 +226,30 @@ describe('POST /api/checkout', () => {
       });
     expect(second.status).toBe(422);
     expect(second.body.error.code).toBe('COUPON_ALREADY_USED');
+  });
+
+  it('applies PERCENT coupon — discount capped at subtotal when value > 100', async () => {
+    await setupCart([{ stock: 10, qty: 1, price: '50.00' }]); // subtotal = 50.00
+    // 10% of 50 = 5.00; value=10 means 10% off
+    const coupon = await createCoupon({ type: 'PERCENT', value: '10' });
+
+    const res = await request(app)
+      .post('/api/checkout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        shippingAddress: SHIPPING_ADDR,
+        paymentMethod: 'mock_card',
+        couponCode: coupon.code,
+        outcomeMode: 'MANUAL',
+      });
+
+    expect(res.status).toBe(201);
+
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { id: res.body.orderId as string },
+    });
+    expect(order.discount.toFixed(2)).toBe('5.00'); // 50 * 10 / 100
+    expect(order.total.toFixed(2)).toBe('45.00');
   });
 });
 

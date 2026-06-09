@@ -14,6 +14,14 @@ import { issueAccessToken } from '../../src/services/authService.js';
  * wins and gets a CouponUsage row; the other sees count >= usageLimit and
  * gets 422 COUPON_LIMIT_REACHED.
  *
+ * Concurrency note: Promise.all on two supertest requests within a single
+ * Node.js process / singleFork Vitest pool is cooperative, not truly parallel.
+ * The test validates _outcome invariants_ (exactly 1 usage row, 1×201), not the
+ * timing of the race. A true concurrent race would require two separate HTTP
+ * clients against a live server. The advisory lock is still exercised because
+ * Prisma's interactive transaction pool may interleave the two async chains
+ * before the first one commits.
+ *
  * Expected invariants:
  *   1. Exactly 1 response is 201.
  *   2. The other response is 422 COUPON_LIMIT_REACHED.
@@ -93,19 +101,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const uid of userIds) {
-    // eslint-disable-next-line no-await-in-loop
-    await prisma.orderStatusLog.deleteMany({ where: { order: { userId: uid } } });
-    // eslint-disable-next-line no-await-in-loop
-    await prisma.paymentMock.deleteMany({ where: { order: { userId: uid } } });
-    // eslint-disable-next-line no-await-in-loop
-    await prisma.orderItem.deleteMany({ where: { order: { userId: uid } } });
-    // CouponUsage cascade-deleted with Order
-    // eslint-disable-next-line no-await-in-loop
-    await prisma.order.deleteMany({ where: { userId: uid } });
-    // eslint-disable-next-line no-await-in-loop
-    await prisma.cart.deleteMany({ where: { userId: uid } });
-  }
+  await Promise.all(
+    userIds.map(async (uid) => {
+      await prisma.orderStatusLog.deleteMany({ where: { order: { userId: uid } } });
+      await prisma.paymentMock.deleteMany({ where: { order: { userId: uid } } });
+      await prisma.orderItem.deleteMany({ where: { order: { userId: uid } } });
+      // CouponUsage cascade-deleted with Order
+      await prisma.order.deleteMany({ where: { userId: uid } });
+      await prisma.cart.deleteMany({ where: { userId: uid } });
+    }),
+  );
   await prisma.sku.deleteMany({ where: { code: { startsWith: SKU_PREFIX } } });
   await prisma.user.deleteMany({ where: { email: { endsWith: `@${EMAIL_DOMAIN}` } } });
   await prisma.coupon.delete({ where: { id: couponId } });

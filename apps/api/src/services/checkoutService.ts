@@ -159,9 +159,19 @@ export async function checkout(userId: string, input: CheckoutInput): Promise<Ch
     });
 
     if (appliedCouponId) {
-      await tx.couponUsage.create({
-        data: { couponId: appliedCouponId, userId, orderId: order.id },
-      });
+      try {
+        await tx.couponUsage.create({
+          data: { couponId: appliedCouponId, userId, orderId: order.id },
+        });
+      } catch (e) {
+        // UNIQUE(coupon_id, user_id) fires when a concurrent checkout for the same
+        // user slips past the pre-lock validateCoupon snapshot (both read 0 usages
+        // before either commits). Surface as 422 rather than leaking a raw 500.
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          throw new AppError(ErrorCodes.COUPON_ALREADY_USED, '您已使用過此優惠碼', 422);
+        }
+        throw e;
+      }
     }
 
     await tx.paymentMock.create({

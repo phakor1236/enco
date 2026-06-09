@@ -411,6 +411,12 @@ model Coupon {
 /// at the DB level so no service-layer retry can sneak a duplicate through.
 /// FK to Order is Cascade so cancelling an order also clears its usage row,
 /// allowing the user to reuse the coupon after a rollback or cancel.
+///
+/// Intentional replay policy: PENDING → CANCELLED frees the coupon so a failed
+/// payment does not permanently consume the user's allocation. This means a user
+/// can retry after AUTO_FAILURE. If the policy changes to "consumed on PAID only",
+/// remove the Cascade and release the usage explicitly inside transitionOrder's
+/// CANCELLED arm instead.
 model CouponUsage {
   id       String   @id @default(cuid())
   couponId String   @map("coupon_id")
