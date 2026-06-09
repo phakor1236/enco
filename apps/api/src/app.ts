@@ -18,6 +18,7 @@ import { healthRouter } from './routes/health.js';
 import { ordersRouter } from './routes/orders.js';
 import { categoriesRouter, productsRouter } from './routes/products.js';
 import { webhooksRouter } from './routes/webhooks.js';
+import { adminOrdersRouter } from './routes/admin/orders.js';
 import { adminProductsRouter, adminSkusRouter } from './routes/admin/products.js';
 
 export function createApp(): Express {
@@ -57,6 +58,7 @@ export function createApp(): Express {
   app.use('/api/coupons', couponsRouter);
   app.use('/api/orders', ordersRouter);
   app.use('/api/webhooks', webhooksRouter);
+  app.use('/api/admin/orders', adminOrdersRouter);
   app.use('/api/admin/products', adminProductsRouter);
   app.use('/api/admin/skus', adminSkusRouter);
   app.use('/api', healthRouter);
