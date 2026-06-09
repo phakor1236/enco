@@ -1,7 +1,7 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AxiosError } from 'axios';
-import { ShippingAddressSchema } from '@app/shared';
+import { ErrorCodes, ShippingAddressSchema } from '@app/shared';
 
 import { Button } from '../components/Button.js';
 import { Field } from '../components/Field.js';
@@ -27,10 +27,14 @@ function apiErrorMessage(err: unknown): string {
   if (err instanceof AxiosError) {
     const body = err.response?.data as ApiErrorBody | undefined;
     const code = body?.error?.code;
-    if (code === 'CART_EMPTY') return '購物車是空的，請先加入商品再結帳';
-    if (code === 'OUT_OF_STOCK') return '部分商品庫存不足，請調整後再試';
-    if (code === 'UNAUTHENTICATED') return '請先登入再結帳';
-    if (code === 'VALIDATION_ERROR') return '輸入資料格式有誤，請再確認';
+    if (code === ErrorCodes.CART_EMPTY) return '購物車是空的，請先加入商品再結帳';
+    if (code === ErrorCodes.OUT_OF_STOCK) return '部分商品庫存不足，請調整後再試';
+    if (code === ErrorCodes.UNAUTHENTICATED) return '請先登入再結帳';
+    if (code === ErrorCodes.VALIDATION_ERROR) return '輸入資料格式有誤，請再確認';
+    if (code === ErrorCodes.COUPON_BELOW_MIN) return '訂單金額不足以使用此優惠碼';
+    if (code === ErrorCodes.COUPON_LIMIT_REACHED) return '優惠碼已達使用上限';
+    if (code === ErrorCodes.COUPON_ALREADY_USED) return '您已使用過此優惠碼';
+    if (code === ErrorCodes.COUPON_EXPIRED) return '優惠碼已過期';
   }
   return '結帳失敗，請稍後再試';
 }
@@ -50,6 +54,20 @@ export function CheckoutPage(): JSX.Element {
     code: string;
     discountAmount: string;
   } | null>(null);
+  const prevSubtotalRef = useRef<string | undefined>(undefined);
+
+  // Clear applied coupon if the cart subtotal changes (e.g. qty edited in another tab).
+  // The discount was computed against the old subtotal and is no longer valid.
+  useEffect(() => {
+    if (
+      appliedCoupon !== null &&
+      prevSubtotalRef.current !== undefined &&
+      cart?.subtotal !== prevSubtotalRef.current
+    ) {
+      setAppliedCoupon(null);
+    }
+    prevSubtotalRef.current = cart?.subtotal;
+  }, [cart?.subtotal, appliedCoupon]);
 
   // Guard: must be logged in
   if (!user) {
@@ -96,8 +114,10 @@ export function CheckoutPage(): JSX.Element {
   const isEmpty = !cartLoading && (!cart || cart.items.length === 0);
 
   const subtotal = cart?.subtotal ?? '0';
-  const discountNum = parseFloat(appliedCoupon?.discountAmount ?? '0');
-  const totalNum = Math.max(0, parseFloat(subtotal) - discountNum);
+  // Integer-cent arithmetic avoids IEEE-754 drift on decimal string subtraction.
+  const subtotalCents = Math.round(parseFloat(subtotal) * 100);
+  const discountCents = Math.round(parseFloat(appliedCoupon?.discountAmount ?? '0') * 100);
+  const totalNum = Math.max(0, subtotalCents - discountCents) / 100;
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">

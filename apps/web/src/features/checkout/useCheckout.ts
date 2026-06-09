@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
-import type { CheckoutBodyType, CheckoutResultDto } from '@app/shared';
+import type { CheckoutBodyType, CheckoutResultDto, CouponValidateResult } from '@app/shared';
 
 import { apiClient } from '../../lib/apiClient.js';
 import { cartKeys } from '../cart/useCart.js';
@@ -71,12 +71,7 @@ export const orderKeys = {
 // Coupon
 // ---------------------------------------------------------------------------
 
-export interface CouponValidateResult {
-  code: string;
-  type: 'FIXED' | 'PERCENT';
-  value: string;
-  discountAmount: string;
-}
+export type { CouponValidateResult } from '@app/shared';
 
 export function useCouponValidate() {
   return useMutation<CouponValidateResult, Error, { code: string; subtotal: string }>({

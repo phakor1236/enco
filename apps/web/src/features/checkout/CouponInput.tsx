@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { AxiosError } from 'axios';
+import { ErrorCodes } from '@app/shared';
 
 import { formatMoney } from '../products/format.js';
 
@@ -12,13 +13,13 @@ interface ApiErrorBody {
 function couponErrorMessage(err: unknown): string {
   if (err instanceof AxiosError) {
     const code = (err.response?.data as ApiErrorBody | undefined)?.error?.code;
-    if (code === 'COUPON_NOT_FOUND') return '找不到此優惠碼';
-    if (code === 'COUPON_NOT_STARTED') return '優惠碼尚未開始使用';
-    if (code === 'COUPON_EXPIRED') return '優惠碼已過期';
-    if (code === 'COUPON_BELOW_MIN') return '訂單金額不足以使用此優惠碼';
-    if (code === 'COUPON_LIMIT_REACHED') return '優惠碼已達使用上限';
-    if (code === 'COUPON_ALREADY_USED') return '您已使用過此優惠碼';
-    if (code === 'RATE_LIMITED') return '請求過於頻繁，請稍後再試';
+    if (code === ErrorCodes.COUPON_NOT_FOUND) return '找不到此優惠碼';
+    if (code === ErrorCodes.COUPON_NOT_STARTED) return '優惠碼尚未開始使用';
+    if (code === ErrorCodes.COUPON_EXPIRED) return '優惠碼已過期';
+    if (code === ErrorCodes.COUPON_BELOW_MIN) return '訂單金額不足以使用此優惠碼';
+    if (code === ErrorCodes.COUPON_LIMIT_REACHED) return '優惠碼已達使用上限';
+    if (code === ErrorCodes.COUPON_ALREADY_USED) return '您已使用過此優惠碼';
+    if (code === ErrorCodes.RATE_LIMITED) return '請求過於頻繁，請稍後再試';
   }
   return '驗證失敗，請稍後再試';
 }
@@ -96,6 +97,8 @@ export function CouponInput({
             if (errorMsg) setErrorMsg('');
           }}
           placeholder="輸入優惠碼"
+          autoComplete="off"
+          spellCheck={false}
           className="h-10 flex-1 rounded-lg border border-line bg-white px-3 text-sm text-ink placeholder:text-ink-soft focus:border-primary focus:outline-none"
         />
         <button
