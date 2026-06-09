@@ -51,10 +51,12 @@ afterAll(async () => {
   await prisma.orderStatusLog.deleteMany({ where: { order: { userId } } });
   await prisma.paymentMock.deleteMany({ where: { order: { userId } } });
   await prisma.orderItem.deleteMany({ where: { order: { userId } } });
+  // CouponUsage rows are cascade-deleted with the Order rows below
   await prisma.order.deleteMany({ where: { userId } });
   await prisma.cart.deleteMany({ where: { userId } });
   await prisma.sku.deleteMany({ where: { code: { startsWith: SKU_PREFIX } } });
   await prisma.user.deleteMany({ where: { email: { endsWith: `@${EMAIL_DOMAIN}` } } });
+  await prisma.coupon.deleteMany({ where: { code: { startsWith: 'TESTT53-' } } });
   await prisma.$disconnect();
 });
 
@@ -94,6 +96,24 @@ async function setupCart(specs: SkuSpec[]) {
 // ============================================================================
 // POST /api/checkout
 // ============================================================================
+
+async function createCoupon(overrides?: {
+  code?: string;
+  type?: 'FIXED' | 'PERCENT';
+  value?: string;
+  usageLimit?: number;
+  minAmount?: string;
+}) {
+  return prisma.coupon.create({
+    data: {
+      code: overrides?.code ?? `TESTT53-${randomUUID().slice(0, 8)}`,
+      type: overrides?.type ?? 'FIXED',
+      value: overrides?.value ?? '10.00',
+      usageLimit: overrides?.usageLimit ?? null,
+      minAmount: overrides?.minAmount ?? null,
+    },
+  });
+}
 
 describe('POST /api/checkout', () => {
   it('creates PENDING order and returns orderId + paymentIntentId', async () => {
@@ -146,6 +166,66 @@ describe('POST /api/checkout', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('OUT_OF_STOCK');
+  });
+
+  it('applies FIXED coupon — discount + total correct, CouponUsage created', async () => {
+    await setupCart([{ stock: 10, qty: 2, price: '50.00' }]); // subtotal = 100.00
+    const coupon = await createCoupon({ value: '10.00' }); // FIXED 10 off
+
+    const res = await request(app)
+      .post('/api/checkout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        shippingAddress: SHIPPING_ADDR,
+        paymentMethod: 'mock_card',
+        couponCode: coupon.code,
+        outcomeMode: 'MANUAL',
+      });
+
+    expect(res.status).toBe(201);
+
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { id: res.body.orderId as string },
+    });
+    expect(order.discount.toFixed(2)).toBe('10.00');
+    expect(order.total.toFixed(2)).toBe('90.00');
+
+    const usage = await prisma.couponUsage.findUnique({
+      where: { couponId_userId: { couponId: coupon.id, userId } },
+    });
+    expect(usage).not.toBeNull();
+    expect(usage?.orderId).toBe(order.id);
+  });
+
+  it('returns 422 COUPON_ALREADY_USED when same user tries coupon twice', async () => {
+    const coupon = await createCoupon({ value: '5.00' });
+
+    // First checkout — should succeed
+    await setupCart([{ stock: 10, qty: 1, price: '50.00' }]);
+    const first = await request(app)
+      .post('/api/checkout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        shippingAddress: SHIPPING_ADDR,
+        paymentMethod: 'mock_card',
+        couponCode: coupon.code,
+        outcomeMode: 'MANUAL',
+      });
+    expect(first.status).toBe(201);
+
+    // Second checkout with same coupon — should fail
+    await setupCart([{ stock: 10, qty: 1, price: '50.00' }]);
+    const second = await request(app)
+      .post('/api/checkout')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        shippingAddress: SHIPPING_ADDR,
+        paymentMethod: 'mock_card',
+        couponCode: coupon.code,
+        outcomeMode: 'MANUAL',
+      });
+    expect(second.status).toBe(422);
+    expect(second.body.error.code).toBe('COUPON_ALREADY_USED');
   });
 });
 

@@ -10,6 +10,7 @@ export interface CouponValidationResult {
     code: string;
     type: 'FIXED' | 'PERCENT';
     value: Prisma.Decimal;
+    usageLimit: number | null;
   };
   discountAmount: Prisma.Decimal;
 }
@@ -92,7 +93,13 @@ export async function validateCoupon(
   }
 
   return {
-    coupon: { id: coupon.id, code: coupon.code, type: coupon.type, value: coupon.value },
+    coupon: {
+      id: coupon.id,
+      code: coupon.code,
+      type: coupon.type,
+      value: coupon.value,
+      usageLimit: coupon.usageLimit,
+    },
     discountAmount,
   };
 }

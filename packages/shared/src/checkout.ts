@@ -10,6 +10,7 @@ export const ShippingAddressSchema = z.object({
 export const CheckoutBody = z.object({
   shippingAddress: ShippingAddressSchema,
   paymentMethod: z.string().min(1),
+  couponCode: z.string().min(1).optional(),
   outcomeMode: z.enum(['AUTO_SUCCESS', 'AUTO_FAILURE', 'MANUAL']).optional(),
 });
 

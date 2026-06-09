@@ -6,6 +6,8 @@ import { ErrorCodes } from '@app/shared';
 import { AppError } from '../lib/errors.js';
 import { prisma } from '../lib/db.js';
 
+import { validateCoupon } from './couponService.js';
+
 /**
  * T4.3 — checkout service
  *
@@ -22,13 +24,17 @@ import { prisma } from '../lib/db.js';
  * idempotency key stored on the Order row; T4.4's webhook handler uses it
  * for a conditional PAID transition (`WHERE paymentIntentId=? AND status='PENDING'`).
  *
- * T5.3 will add couponCode to CheckoutInput and write CouponUsage inside
- * this same tx.
+ * T5.3 extended: if `couponCode` is supplied, `validateCoupon` is called inside
+ * the tx (date / min / per-user checks), then a pg_advisory_xact_lock serialises
+ * concurrent checkouts on the same coupon before the definitive count re-check.
+ * CouponUsage is written in the same tx — a rollback on any downstream failure
+ * automatically reverts it, letting the user retry with the same code.
  */
 
 export interface CheckoutInput {
   shippingAddress: Prisma.InputJsonValue;
   paymentMethod: string;
+  couponCode?: string;
   /** Defaults to AUTO_SUCCESS. Pass AUTO_FAILURE for the T8.9 unhappy-path test. */
   outcomeMode?: PaymentOutcomeMode;
 }
@@ -91,6 +97,39 @@ export async function checkout(userId: string, input: CheckoutInput): Promise<Ch
       (acc, item) => acc.add(item.sku.price.mul(item.qty)),
       new Prisma.Decimal(0),
     );
+
+    // --- Coupon -----------------------------------------------------------
+    let discount = new Prisma.Decimal(0);
+    let appliedCouponId: string | null = null;
+
+    if (input.couponCode) {
+      // Pre-validate: date range, minAmount, per-user already-used.
+      // Uses `tx` so these reads are part of the same snapshot.
+      const { coupon, discountAmount } = await validateCoupon(
+        input.couponCode,
+        userId,
+        subtotal,
+        tx,
+      );
+
+      // Serialize concurrent checkouts on the same coupon. Other txs block
+      // here until we commit; they then re-read the committed count and fail
+      // with LIMIT_REACHED if the quota was just consumed.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(abs(hashtext(${coupon.id}))::bigint)`;
+
+      // Definitive count check inside the lock (READ COMMITTED re-reads the
+      // now-committed state after the lock is acquired).
+      if (coupon.usageLimit !== null) {
+        const currentCount = await tx.couponUsage.count({ where: { couponId: coupon.id } });
+        if (currentCount >= coupon.usageLimit) {
+          throw new AppError(ErrorCodes.COUPON_LIMIT_REACHED, '優惠碼已達使用上限', 422);
+        }
+      }
+
+      discount = discountAmount;
+      appliedCouponId = coupon.id;
+    }
+
     const paymentIntentId = randomUUID();
 
     const order = await tx.order.create({
@@ -99,7 +138,8 @@ export async function checkout(userId: string, input: CheckoutInput): Promise<Ch
         status: 'PENDING',
         paymentIntentId,
         subtotal,
-        total: subtotal, // T5.3 will deduct discount here
+        discount,
+        total: subtotal.sub(discount),
         shippingAddress: input.shippingAddress,
         paymentMethod: input.paymentMethod,
         items: {
@@ -117,6 +157,12 @@ export async function checkout(userId: string, input: CheckoutInput): Promise<Ch
       },
       select: { id: true },
     });
+
+    if (appliedCouponId) {
+      await tx.couponUsage.create({
+        data: { couponId: appliedCouponId, userId, orderId: order.id },
+      });
+    }
 
     await tx.paymentMock.create({
       data: {
