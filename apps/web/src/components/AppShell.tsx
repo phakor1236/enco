@@ -38,7 +38,12 @@ export function AppShell(): JSX.Element {
             <CartIconButton />
             {user ? (
               <>
-                <span className="hidden sm:inline text-ink-soft">{user.email}</span>
+                <Link
+                  to="/orders"
+                  className="hidden sm:inline rounded-full px-4 py-1.5 hover:bg-paper-2"
+                >
+                  我的訂單
+                </Link>
                 <button
                   type="button"
                   onClick={() => logout.mutate()}

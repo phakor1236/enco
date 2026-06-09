@@ -199,15 +199,13 @@ function DrawerFooter(): JSX.Element | null {
         </span>
       </div>
       {user ? (
-        // T4 will swap this for a real /checkout link. Disabled-but-honest is
-        // preferable to a button that 404s the user.
-        <button
-          type="button"
-          disabled
-          className="h-11 w-full rounded-full bg-ink font-semibold text-white opacity-50 cursor-not-allowed"
+        <Link
+          to="/checkout"
+          onClick={close}
+          className="flex h-11 w-full items-center justify-center rounded-full bg-ink font-semibold text-white hover:opacity-90"
         >
-          結帳（即將上線）
-        </button>
+          前往結帳
+        </Link>
       ) : (
         <Link
           to="/login"
