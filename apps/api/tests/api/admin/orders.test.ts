@@ -173,6 +173,29 @@ describe('auth gates', () => {
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('DEMO_ACCOUNT_READONLY');
   });
+
+  it('demo SUPER_ADMIN → 403 DEMO_ACCOUNT_READONLY on refund', async () => {
+    // demoToken is ADMIN role, so the role gate fires first. Use a demo SUPER_ADMIN
+    // to isolate the demoReadonly leg of superWriteGuard.
+    const demoSuper = await prisma.user.upsert({
+      where: { email: `demo-super@${EMAIL_DOMAIN}` },
+      update: {},
+      create: {
+        email: `demo-super@${EMAIL_DOMAIN}`,
+        passwordHash: DUMMY_HASH,
+        role: 'SUPER_ADMIN',
+        isDemoReadonly: true,
+      },
+    });
+    const demoSuperToken = issueAccessToken({ id: demoSuper.id, role: demoSuper.role });
+    const { orderId } = await createPaidOrder();
+    const res = await request(app)
+      .post(`/api/admin/orders/${orderId}/refund`)
+      .set('Authorization', `Bearer ${demoSuperToken}`)
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('DEMO_ACCOUNT_READONLY');
+  });
 });
 
 // ── GET /api/admin/orders ─────────────────────────────────────────────────────
@@ -187,6 +210,8 @@ describe('GET /api/admin/orders', () => {
     expect(typeof res.body.total).toBe('number');
     expect(res.body.page).toBe(1);
     expect(res.body.pageSize).toBe(5);
+    expect(typeof res.body.totalPages).toBe('number');
+    expect(res.body.totalPages).toBe(Math.ceil(res.body.total / 5));
   });
 
   it('filters by status', async () => {

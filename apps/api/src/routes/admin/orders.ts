@@ -1,4 +1,5 @@
 import { Router, type Router as RouterType } from 'express';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { ErrorCodes } from '@app/shared';
 
@@ -85,6 +86,7 @@ adminOrdersRouter.get(
         total,
         page,
         pageSize,
+        totalPages: Math.ceil(total / pageSize),
       });
     } catch (e) {
       next(e);
@@ -160,31 +162,38 @@ adminOrdersRouter.post(
       const orderId = req.params['id'] as string;
       const { carrier, trackingNo, note } = req.body as z.infer<typeof ShipBodySchema>;
       const actor = { id: req.user!.id, role: req.user!.role };
+      const toStatus = 'SHIPPED' as const;
 
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: { status: true },
-      });
-      if (!order) throw new AppError(ErrorCodes.ORDER_NOT_FOUND, 'Order not found', 404);
-
+      // diffPayload is populated inside coreLogic (after the tx reads the live
+      // status) so the audit record reflects what the DB held at transition time,
+      // not a pre-tx snapshot that may be stale under concurrent writes.
+      const diffPayload: Record<string, unknown> = {};
       await withAuditLog<void>(
         {
           actorId: actor.id,
           resourceType: 'order',
           resourceId: orderId,
           action: 'ship',
-          diff: { before: { status: order.status }, after: { status: 'SHIPPED' } },
+          diff: diffPayload as Prisma.InputJsonObject,
           ip: req.ip ?? undefined,
           userAgent: req.get('user-agent') ?? undefined,
         },
-        (tx) =>
-          transitionOrder(tx, orderId, 'SHIPPED', actor, {
+        async (tx) => {
+          const order = await tx.order.findUnique({
+            where: { id: orderId },
+            select: { status: true },
+          });
+          if (!order) throw new AppError(ErrorCodes.ORDER_NOT_FOUND, 'Order not found', 404);
+          diffPayload['before'] = { status: order.status };
+          diffPayload['after'] = { status: toStatus };
+          await transitionOrder(tx, orderId, toStatus, actor, {
             note,
             shipment: { carrier, trackingNo },
-          }),
+          });
+        },
       );
 
-      res.json({ orderId, status: 'SHIPPED' });
+      res.json({ orderId, status: toStatus });
     } catch (e) {
       next(e);
     }
@@ -202,27 +211,32 @@ adminOrdersRouter.post(
       const orderId = req.params['id'] as string;
       const { note } = req.body as z.infer<typeof RefundBodySchema>;
       const actor = { id: req.user!.id, role: req.user!.role };
+      const toStatus = 'REFUNDED' as const;
 
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: { status: true },
-      });
-      if (!order) throw new AppError(ErrorCodes.ORDER_NOT_FOUND, 'Order not found', 404);
-
+      const diffPayload: Record<string, unknown> = {};
       await withAuditLog<void>(
         {
           actorId: actor.id,
           resourceType: 'order',
           resourceId: orderId,
           action: 'refund',
-          diff: { before: { status: order.status }, after: { status: 'REFUNDED' } },
+          diff: diffPayload as Prisma.InputJsonObject,
           ip: req.ip ?? undefined,
           userAgent: req.get('user-agent') ?? undefined,
         },
-        (tx) => transitionOrder(tx, orderId, 'REFUNDED', actor, { note }),
+        async (tx) => {
+          const order = await tx.order.findUnique({
+            where: { id: orderId },
+            select: { status: true },
+          });
+          if (!order) throw new AppError(ErrorCodes.ORDER_NOT_FOUND, 'Order not found', 404);
+          diffPayload['before'] = { status: order.status };
+          diffPayload['after'] = { status: toStatus };
+          await transitionOrder(tx, orderId, toStatus, actor, { note });
+        },
       );
 
-      res.json({ orderId, status: 'REFUNDED' });
+      res.json({ orderId, status: toStatus });
     } catch (e) {
       next(e);
     }
