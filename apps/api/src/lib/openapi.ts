@@ -6,6 +6,8 @@ import {
 import { z } from 'zod';
 import {
   CategoryDtoSchema,
+  CouponValidateBodySchema,
+  CouponValidateResultSchema,
   LoginBody,
   ProductDetailDtoSchema,
   ProductImageDtoSchema,
@@ -265,6 +267,41 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV3['generateD
     },
   });
 
+  // -------------------------------------------------------------------------
+  // Coupons (T5.2)
+  // -------------------------------------------------------------------------
+
+  const CouponValidateBody = CouponValidateBodySchema.openapi('CouponValidateBody');
+  const CouponValidateResult = CouponValidateResultSchema.openapi('CouponValidateResult');
+  registry.register('CouponValidateBody', CouponValidateBody);
+  registry.register('CouponValidateResult', CouponValidateResult);
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/coupons/validate',
+    tags: ['Coupons'],
+    summary: 'Validate a coupon code and calculate the discount amount',
+    description:
+      'Checks existence, date range, minimum order amount, global usage limit, and ' +
+      'per-user usage. Returns the discount amount to display on the checkout page. ' +
+      'Does NOT consume the coupon — that happens atomically in POST /api/checkout.',
+    security: [{ bearerAuth: [] }],
+    request: { body: { content: { 'application/json': { schema: CouponValidateBody } } } },
+    responses: {
+      200: {
+        description: 'Coupon is valid; discount amount calculated',
+        content: { 'application/json': { schema: CouponValidateResult } },
+      },
+      400: errorResponse('VALIDATION_ERROR'),
+      401: errorResponse('UNAUTHENTICATED'),
+      404: errorResponse('COUPON_NOT_FOUND'),
+      422: errorResponse(
+        'COUPON_NOT_STARTED | COUPON_EXPIRED | COUPON_BELOW_MIN | COUPON_LIMIT_REACHED | COUPON_ALREADY_USED',
+      ),
+      429: errorResponse('RATE_LIMITED (20 / min / user)'),
+    },
+  });
+
   const generator = new OpenApiGeneratorV3(registry.definitions);
   return generator.generateDocument({
     openapi: '3.0.0',
@@ -279,6 +316,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV3['generateD
     tags: [
       { name: 'Auth', description: 'Registration + session management' },
       { name: 'Catalog', description: 'Public categories and products' },
+      { name: 'Coupons', description: 'Coupon validation (apply in checkout)' },
     ],
   });
 }

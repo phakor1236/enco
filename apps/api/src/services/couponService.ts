@@ -26,6 +26,12 @@ export interface CouponValidationResult {
  *
  * Accepts `db` so T5.3's checkout tx can call this directly — any thrown
  * AppError rolls back the outer transaction automatically.
+ *
+ * IMPORTANT — when called outside a transaction (default `db = prisma`), the
+ * usageLimit count check is a best-effort snapshot: two concurrent callers
+ * can both read count < usageLimit and both pass. T5.3 MUST re-run this
+ * function inside the checkout tx to obtain the real atomic guarantee; the
+ * DB-level UNIQUE(coupon_id, user_id) on CouponUsage is the final backstop.
  */
 export async function validateCoupon(
   code: string,
@@ -36,9 +42,14 @@ export async function validateCoupon(
   const sub = new Prisma.Decimal(subtotal.toString());
   const now = new Date();
 
+  // Single query: coupon + global usage count + this user's usage (if any).
+  // Avoids a second round-trip and reduces lock-holding time inside a tx.
   const coupon = await db.coupon.findUnique({
     where: { code },
-    include: { _count: { select: { usages: true } } },
+    include: {
+      _count: { select: { usages: true } },
+      usages: { where: { userId }, take: 1 },
+    },
   });
 
   if (!coupon) {
@@ -65,11 +76,7 @@ export async function validateCoupon(
   if (coupon.usageLimit !== null && coupon._count.usages >= coupon.usageLimit) {
     throw new AppError(ErrorCodes.COUPON_LIMIT_REACHED, '優惠碼已達使用上限', 422);
   }
-
-  const existingUsage = await db.couponUsage.findUnique({
-    where: { couponId_userId: { couponId: coupon.id, userId } },
-  });
-  if (existingUsage) {
+  if (coupon.usages.length > 0) {
     throw new AppError(ErrorCodes.COUPON_ALREADY_USED, '您已使用過此優惠碼', 422);
   }
 
@@ -79,7 +86,9 @@ export async function validateCoupon(
     discountAmount = coupon.value.greaterThan(sub) ? sub : coupon.value;
   } else {
     // PERCENT: value is 0–100 (e.g. 10 → 10% off). Round half-up to 2 dp.
+    // Cap at subtotal in case an admin creates a coupon with value > 100.
     discountAmount = sub.times(coupon.value).dividedBy(100).toDecimalPlaces(2);
+    if (discountAmount.greaterThan(sub)) discountAmount = sub;
   }
 
   return {

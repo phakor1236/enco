@@ -13,6 +13,8 @@ tags:
     description: Registration + session management
   - name: Catalog
     description: Public categories and products
+  - name: Coupons
+    description: Coupon validation (apply in checkout)
 components:
   schemas:
     ErrorResponse:
@@ -503,6 +505,37 @@ components:
       required:
         - items
         - nextCursor
+    CouponValidateBody:
+      type: object
+      properties:
+        code:
+          type: string
+          minLength: 1
+        subtotal:
+          type: string
+          pattern: ^\d+(\.\d{1,2})?$
+      required:
+        - code
+        - subtotal
+    CouponValidateResult:
+      type: object
+      properties:
+        code:
+          type: string
+        type:
+          type: string
+          enum:
+            - FIXED
+            - PERCENT
+        value:
+          type: string
+        discountAmount:
+          type: string
+      required:
+        - code
+        - type
+        - value
+        - discountAmount
   parameters: {}
 paths:
   /api/auth/register:
@@ -721,6 +754,60 @@ paths:
           description: Logged out (or already logged out)
         "429":
           description: RATE_LIMITED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/coupons/validate:
+    post:
+      tags:
+        - Coupons
+      summary: Validate a coupon code and calculate the discount amount
+      description: Checks existence, date range, minimum order amount, global usage
+        limit, and per-user usage. Returns the discount amount to display on the
+        checkout page. Does NOT consume the coupon — that happens atomically in
+        POST /api/checkout.
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CouponValidateBody"
+      responses:
+        "200":
+          description: Coupon is valid; discount amount calculated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CouponValidateResult"
+        "400":
+          description: VALIDATION_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: UNAUTHENTICATED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: COUPON_NOT_FOUND
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: COUPON_NOT_STARTED | COUPON_EXPIRED | COUPON_BELOW_MIN |
+            COUPON_LIMIT_REACHED | COUPON_ALREADY_USED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: RATE_LIMITED (20 / min / user)
           content:
             application/json:
               schema:
