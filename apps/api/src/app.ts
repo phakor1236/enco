@@ -21,6 +21,7 @@ import { webhooksRouter } from './routes/webhooks.js';
 import { adminCouponsRouter } from './routes/admin/coupons.js';
 import { adminOrdersRouter } from './routes/admin/orders.js';
 import { adminProductsRouter, adminSkusRouter } from './routes/admin/products.js';
+import { adminReportsRouter } from './routes/admin/reports.js';
 
 export function createApp(): Express {
   const app = express();
@@ -62,6 +63,7 @@ export function createApp(): Express {
   app.use('/api/admin/coupons', adminCouponsRouter);
   app.use('/api/admin/orders', adminOrdersRouter);
   app.use('/api/admin/products', adminProductsRouter);
+  app.use('/api/admin/reports', adminReportsRouter);
   app.use('/api/admin/skus', adminSkusRouter);
   app.use('/api', healthRouter);
 
