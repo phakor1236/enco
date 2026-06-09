@@ -22,7 +22,7 @@ ordersRouter.get('/', async (req, res, next) => {
     );
     const skip = (page - 1) * pageSize;
 
-    const [orders, total] = await prisma.$transaction([
+    const [orders, total] = await Promise.all([
       prisma.order.findMany({
         where: { userId: req.user!.id },
         orderBy: { createdAt: 'desc' },
@@ -82,7 +82,12 @@ ordersRouter.get('/:id', async (req, res, next) => {
       createdAt: order.createdAt,
       paidAt: order.paidAt,
       shippedAt: order.shippedAt,
-      items: order.items,
+      items: order.items.map((item) => ({
+        skuId: item.skuId,
+        qty: item.qty,
+        unitPrice: item.unitPrice,
+        skuSnapshot: item.skuSnapshot,
+      })),
       paymentStatus: order.payments[0]?.status ?? null,
     });
   } catch (e) {

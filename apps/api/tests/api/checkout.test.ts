@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 
@@ -209,6 +211,36 @@ describe('GET /api/orders/:id', () => {
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('ORDER_NOT_FOUND');
   });
+
+  it("returns 404 (not 403) for another user's order id — avoids leaking existence", async () => {
+    // Create a second user and an order under their account
+    const other = await prisma.user.upsert({
+      where: { email: `other@${EMAIL_DOMAIN}` },
+      update: {},
+      create: { email: `other@${EMAIL_DOMAIN}`, passwordHash: DUMMY_HASH, role: 'CUSTOMER' },
+    });
+    const otherOrder = await prisma.order.create({
+      data: {
+        userId: other.id,
+        status: 'PENDING',
+        paymentIntentId: randomUUID(),
+        subtotal: '0',
+        total: '0',
+        shippingAddress: { name: 'x', phone: 'x', city: 'x', addr: 'x' },
+        paymentMethod: 'mock_card',
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/orders/${otherOrder.id}`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('ORDER_NOT_FOUND');
+
+    // cleanup
+    await prisma.order.delete({ where: { id: otherOrder.id } });
+    await prisma.user.delete({ where: { id: other.id } });
+  });
 });
 
 // ============================================================================
@@ -287,10 +319,15 @@ describe('AUTO_FAILURE flow', () => {
     const skuMid = await prisma.sku.findUniqueOrThrow({ where: { id: skus[0]!.id } });
     expect(skuMid.stock).toBe(7); // 10 - 3
 
-    // Wait for the setTimeout (200-500ms) plus a safe buffer
-    await new Promise<void>((resolve) => setTimeout(resolve, 900));
-
-    const orderAfter = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    // Poll until the timer-driven CANCELLED transition lands (or 5s deadline).
+    const deadline = Date.now() + 5_000;
+    let orderAfter = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    while (orderAfter.status !== 'CANCELLED' && Date.now() < deadline) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      // eslint-disable-next-line no-await-in-loop
+      orderAfter = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    }
     expect(orderAfter.status).toBe('CANCELLED');
 
     // Stock fully restored by restock()

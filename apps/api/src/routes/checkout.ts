@@ -1,5 +1,5 @@
 import { Router, type Router as RouterType } from 'express';
-import { CheckoutBody } from '@app/shared';
+import { CheckoutBody, type CheckoutBodyType } from '@app/shared';
 
 import { logger } from '../lib/logger.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -18,14 +18,17 @@ checkoutRouter.post('/', requireAuth, validateBody(CheckoutBody), async (req, re
     // so the FE receives PENDING and can show an "awaiting payment" screen
     // before the PAID / CANCELLED transition lands. MANUAL mode skips this;
     // a human-triggered webhook is expected instead.
-    const outcomeMode = (req.body as { outcomeMode?: string }).outcomeMode ?? 'AUTO_SUCCESS';
+    //
+    // .unref() prevents this timer from holding the event loop open when
+    // tests tear down — the callback is fire-and-forget.
+    const { outcomeMode = 'AUTO_SUCCESS' } = req.body as CheckoutBodyType;
     if (outcomeMode !== 'MANUAL') {
       const delay = Math.floor(Math.random() * 300) + 200;
       setTimeout(() => {
         processPaymentOutcome(result.paymentIntentId).catch((err) =>
           logger.error({ err, orderId: result.orderId }, 'payment simulation failed'),
         );
-      }, delay);
+      }, delay).unref();
     }
 
     res.status(201).json(result);

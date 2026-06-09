@@ -7,7 +7,7 @@ import { processPaymentOutcome } from '../services/paymentService.js';
 export const webhooksRouter: RouterType = Router();
 
 const WebhookMockBody = z.object({
-  paymentIntentId: z.string().min(1),
+  paymentIntentId: z.string().uuid(),
 });
 
 /**
