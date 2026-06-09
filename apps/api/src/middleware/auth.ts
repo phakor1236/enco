@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express';
 import type { Role } from '@prisma/client';
 import { ErrorCodes } from '@app/shared';
 
+import { prisma } from '../lib/db.js';
 import { AppError } from '../lib/errors.js';
 import { verifyAccessToken } from '../services/authService.js';
 
@@ -67,6 +68,28 @@ export const optionalAuth: RequestHandler = (req, _res, next) => {
   try {
     const payload = verifyAccessToken(token);
     req.user = { id: payload.sub, role: payload.role };
+    next();
+  } catch (e) {
+    next(e);
+  }
+};
+
+/**
+ * Blocks demo accounts (isDemoReadonly=true) from write operations.
+ * Must be chained AFTER requireAuth.
+ */
+export const demoReadonly: RequestHandler = async (req, _res, next) => {
+  if (!req.user) {
+    return next(new AppError(ErrorCodes.UNAUTHENTICATED, 'Auth required', 401));
+  }
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { isDemoReadonly: true },
+    });
+    if (user?.isDemoReadonly) {
+      return next(new AppError(ErrorCodes.DEMO_ACCOUNT_READONLY, '示範帳號不支援寫入操作', 403));
+    }
     next();
   } catch (e) {
     next(e);

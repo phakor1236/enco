@@ -45,6 +45,9 @@ export const ErrorCodes = {
   COUPON_LIMIT_REACHED: 'COUPON_LIMIT_REACHED',
   COUPON_NOT_FOUND: 'COUPON_NOT_FOUND',
   COUPON_NOT_STARTED: 'COUPON_NOT_STARTED',
+
+  // ---- Phase 6 Admin -------------------------------------------------------
+  DEMO_ACCOUNT_READONLY: 'DEMO_ACCOUNT_READONLY',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
