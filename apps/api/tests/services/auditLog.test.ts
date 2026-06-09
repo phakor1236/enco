@@ -131,4 +131,70 @@ describe('withAuditLog', () => {
       expect(diff).not.toHaveProperty(key);
     }
   });
+
+  it('recursively strips deny-list keys from nested before/after objects', async () => {
+    const actor = await getActor();
+    const resourceId = `${RESOURCE_ID_PREFIX}nested-${Date.now()}`;
+
+    const nestedDiff: Prisma.InputJsonObject = {
+      before: { password_hash: 'old', name: 'Old Tee' },
+      after: { password_hash: 'new', name: 'New Tee', price: '120.00' },
+    };
+
+    await withAuditLog(
+      {
+        actorId: actor,
+        resourceType: RESOURCE_TYPE,
+        resourceId,
+        action: 'update',
+        diff: nestedDiff,
+      },
+      async () => null,
+    );
+
+    const log = await prisma.adminActionLog.findFirstOrThrow({
+      where: { actorId: actor, resourceType: RESOURCE_TYPE, resourceId },
+    });
+    const diff = log.diff as Record<string, Record<string, unknown>>;
+    expect(diff['before']).not.toHaveProperty('password_hash');
+    expect(diff['before']?.['name']).toBe('Old Tee');
+    expect(diff['after']).not.toHaveProperty('password_hash');
+    expect(diff['after']?.['name']).toBe('New Tee');
+    expect(diff['after']?.['price']).toBe('120.00');
+  });
+
+  it('writes null diff when all top-level keys are deny-listed', async () => {
+    const actor = await getActor();
+    const resourceId = `${RESOURCE_ID_PREFIX}alldenied-${Date.now()}`;
+
+    await withAuditLog(
+      {
+        actorId: actor,
+        resourceType: RESOURCE_TYPE,
+        resourceId,
+        action: 'update',
+        diff: { ip: '1.2.3.4', password_hash: 'x' },
+      },
+      async () => null,
+    );
+
+    const log = await prisma.adminActionLog.findFirstOrThrow({
+      where: { actorId: actor, resourceType: RESOURCE_TYPE, resourceId },
+    });
+    expect(log.diff).toBeNull();
+  });
+
+  it('rolls back business operation when AdminActionLog write fails (invalid actorId FK)', async () => {
+    await expect(
+      withAuditLog(
+        {
+          actorId: 'nonexistent-user-id',
+          resourceType: RESOURCE_TYPE,
+          resourceId: `${RESOURCE_ID_PREFIX}fk-fail-${Date.now()}`,
+          action: 'create',
+        },
+        async () => ({ written: true }),
+      ),
+    ).rejects.toThrow(); // FK violation → entire tx rolls back
+  });
 });

@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/db.js';
 
 // Fields that must never appear in the diff payload (SPEC.md §5).
+// ip/user_agent/userAgent are denied from the diff JSON blob but ARE recorded
+// as explicit columns (ctx.ip / ctx.userAgent) on the log row.
 const DENY_LIST = new Set([
   'password_hash',
   'passwordHash',
@@ -26,13 +28,26 @@ export interface AuditContext {
 }
 
 function stripDenyList(obj: Prisma.InputJsonObject): Prisma.InputJsonObject {
-  return Object.fromEntries(Object.entries(obj).filter(([k]) => !DENY_LIST.has(k)));
+  return Object.fromEntries(
+    Object.entries(obj)
+      .filter(([k]) => !DENY_LIST.has(k))
+      .map(([k, v]) => [
+        k,
+        v !== null && typeof v === 'object' && !Array.isArray(v)
+          ? stripDenyList(v as Prisma.InputJsonObject)
+          : v,
+      ]),
+  );
 }
 
 /**
  * HOF that wraps an admin write operation in a Prisma transaction, appending
  * an AdminActionLog row in the same transaction. A throw from `coreLogic`
  * rolls back both the business change and the audit row atomically.
+ *
+ * IMPORTANT: If the AdminActionLog write fails (e.g., invalid actorId FK),
+ * the entire transaction rolls back — the business operation does NOT commit.
+ * Callers must ensure actorId references an existing user.
  *
  * Usage:
  *   const product = await withAuditLog(
@@ -42,12 +57,15 @@ function stripDenyList(obj: Prisma.InputJsonObject): Prisma.InputJsonObject {
  */
 export async function withAuditLog<T>(
   ctx: AuditContext,
-  coreLogic: (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => Promise<T>,
+  coreLogic: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
   return prisma.$transaction(async (tx) => {
     const result = await coreLogic(tx);
 
-    const safeDiff = ctx.diff ? stripDenyList(ctx.diff) : null;
+    const stripped = ctx.diff ? stripDenyList(ctx.diff) : null;
+    // Write null when all keys were deny-listed — an empty {} and null have
+    // different semantics for downstream "find logs with meaningful diff" queries.
+    const safeDiff = stripped && Object.keys(stripped).length > 0 ? stripped : null;
 
     await tx.adminActionLog.create({
       data: {
