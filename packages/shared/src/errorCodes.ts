@@ -47,6 +47,7 @@ export const ErrorCodes = {
   COUPON_NOT_STARTED: 'COUPON_NOT_STARTED',
 
   // ---- Phase 6 Admin -------------------------------------------------------
+  COUPON_IN_USE: 'COUPON_IN_USE',
   DEMO_ACCOUNT_READONLY: 'DEMO_ACCOUNT_READONLY',
   PRODUCT_ALREADY_ARCHIVED: 'PRODUCT_ALREADY_ARCHIVED',
 } as const;
