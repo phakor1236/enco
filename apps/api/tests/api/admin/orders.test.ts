@@ -26,6 +26,7 @@ let superAdminId: string;
 let superAdminToken: string;
 let adminToken: string;
 let customerToken: string;
+let demoToken: string;
 
 beforeAll(async () => {
   const { seedCatalog } = await import('../../../prisma/seed/products.js');
@@ -52,6 +53,18 @@ beforeAll(async () => {
     create: { email: `customer@${EMAIL_DOMAIN}`, passwordHash: DUMMY_HASH, role: 'CUSTOMER' },
   });
   customerToken = issueAccessToken({ id: customer.id, role: customer.role });
+
+  const demo = await prisma.user.upsert({
+    where: { email: `demo@${EMAIL_DOMAIN}` },
+    update: {},
+    create: {
+      email: `demo@${EMAIL_DOMAIN}`,
+      passwordHash: DUMMY_HASH,
+      role: 'ADMIN',
+      isDemoReadonly: true,
+    },
+  });
+  demoToken = issueAccessToken({ id: demo.id, role: demo.role });
 });
 
 afterAll(async () => {
@@ -150,6 +163,16 @@ describe('auth gates', () => {
       .send({});
     expect(res.status).toBe(403);
   });
+
+  it('demo account write → 403 DEMO_ACCOUNT_READONLY on ship', async () => {
+    const { orderId } = await createPaidOrder();
+    const res = await request(app)
+      .post(`/api/admin/orders/${orderId}/ship`)
+      .set('Authorization', `Bearer ${demoToken}`)
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('DEMO_ACCOUNT_READONLY');
+  });
 });
 
 // ── GET /api/admin/orders ─────────────────────────────────────────────────────
@@ -157,11 +180,13 @@ describe('auth gates', () => {
 describe('GET /api/admin/orders', () => {
   it('returns paginated order list', async () => {
     const res = await request(app)
-      .get('/api/admin/orders?limit=5')
+      .get('/api/admin/orders?page=1&pageSize=5')
       .set('Authorization', `Bearer ${superAdminToken}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.items)).toBe(true);
-    expect('nextCursor' in res.body).toBe(true);
+    expect(typeof res.body.total).toBe('number');
+    expect(res.body.page).toBe(1);
+    expect(res.body.pageSize).toBe(5);
   });
 
   it('filters by status', async () => {

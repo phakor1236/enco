@@ -13,13 +13,17 @@ export const adminOrdersRouter: RouterType = Router();
 
 const adminGuard = [requireAuth, requireRole('ADMIN', 'SUPER_ADMIN')];
 const writeGuard = [requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), demoReadonly];
+const superWriteGuard = [requireAuth, requireRole('SUPER_ADMIN'), demoReadonly];
 
 // ── Query / body schemas ──────────────────────────────────────────────────────
 
+// Offset-based pagination (not cursor): admin views are paged tables, not
+// infinite-scroll, and cursor + status filter can silently skip/repeat rows
+// when order status changes between page fetches.
 const AdminOrderListQuerySchema = z.object({
   status: z.enum(['PENDING', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELLED', 'REFUNDED']).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-  cursor: z.string().min(1).max(64).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
 });
 
 const ShipBodySchema = z.object({
@@ -40,33 +44,31 @@ adminOrdersRouter.get(
   validateQuery(AdminOrderListQuerySchema),
   async (req, res, next) => {
     try {
-      const { status, limit, cursor } = (
+      const { status, page, pageSize } = (
         req as unknown as { validatedQuery: z.infer<typeof AdminOrderListQuerySchema> }
       ).validatedQuery;
 
-      const rows = await prisma.order.findMany({
-        where: status ? { status } : {},
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: limit + 1,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        select: {
-          id: true,
-          userId: true,
-          status: true,
-          subtotal: true,
-          discount: true,
-          shippingFee: true,
-          total: true,
-          createdAt: true,
-          _count: { select: { items: true } },
-        },
-      });
-
-      let nextCursor: string | null = null;
-      if (rows.length > limit) {
-        const overflow = rows.pop();
-        nextCursor = overflow?.id ?? null;
-      }
+      const where = status ? { status } : {};
+      const [rows, total] = await Promise.all([
+        prisma.order.findMany({
+          where,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          select: {
+            id: true,
+            userId: true,
+            status: true,
+            subtotal: true,
+            discount: true,
+            shippingFee: true,
+            total: true,
+            createdAt: true,
+            _count: { select: { items: true } },
+          },
+        }),
+        prisma.order.count({ where }),
+      ]);
 
       res.json({
         items: rows.map((o) => ({
@@ -80,7 +82,9 @@ adminOrdersRouter.get(
           createdAt: o.createdAt,
           itemCount: o._count.items,
         })),
-        nextCursor,
+        total,
+        page,
+        pageSize,
       });
     } catch (e) {
       next(e);
@@ -163,7 +167,7 @@ adminOrdersRouter.post(
       });
       if (!order) throw new AppError(ErrorCodes.ORDER_NOT_FOUND, 'Order not found', 404);
 
-      await withAuditLog(
+      await withAuditLog<void>(
         {
           actorId: actor.id,
           resourceType: 'order',
@@ -191,9 +195,7 @@ adminOrdersRouter.post(
 
 adminOrdersRouter.post(
   '/:id/refund',
-  requireAuth,
-  requireRole('SUPER_ADMIN'),
-  demoReadonly,
+  ...superWriteGuard,
   validateBody(RefundBodySchema),
   async (req, res, next) => {
     try {
@@ -207,7 +209,7 @@ adminOrdersRouter.post(
       });
       if (!order) throw new AppError(ErrorCodes.ORDER_NOT_FOUND, 'Order not found', 404);
 
-      await withAuditLog(
+      await withAuditLog<void>(
         {
           actorId: actor.id,
           resourceType: 'order',
