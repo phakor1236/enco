@@ -36,6 +36,7 @@ model User {
   orders                  Order[]
   orderStatusLogsOperated OrderStatusLog[] @relation("OrderStatusLogOperator")
   couponUsages            CouponUsage[]
+  adminActionLogs         AdminActionLog[]
 
   @@map("users")
 }
@@ -432,6 +433,33 @@ model CouponUsage {
   @@unique([couponId, userId])
   @@index([couponId])
   @@map("coupon_usages")
+}
+
+// ============================================================================
+// T6.1 — Admin Audit Log
+// ============================================================================
+
+/// One row per admin write operation. `diff` stores before/after of key fields
+/// with sensitive columns (password_hash, token_hash, ip, user_agent) stripped
+/// before write (enforced by withAuditLog HOF). `resourceType` examples:
+/// 'product' | 'sku' | 'order' | 'coupon'. `action` examples:
+/// 'create' | 'update' | 'delete' | 'transition:SHIPPED'.
+model AdminActionLog {
+  id           String   @id @default(cuid())
+  actorId      String   @map("actor_id")
+  resourceType String   @map("resource_type")
+  resourceId   String   @map("resource_id")
+  action       String
+  diff         Json?
+  ip           String?
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([resourceType, resourceId, createdAt(sort: Desc)])
+  @@map("admin_action_logs")
 }
 
 /// Created during the PAID→SHIPPED transition (T4.2). The tracking number
