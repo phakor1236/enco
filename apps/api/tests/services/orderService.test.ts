@@ -265,6 +265,27 @@ describe('transitionOrder — side effects', () => {
 });
 
 // ============================================================================
+// Concurrent transitions — lost-update prevention
+// ============================================================================
+
+describe('transitionOrder — concurrent transitions', () => {
+  it('concurrent transitions from the same fromStatus — one wins, the loser rolls back side effects', async () => {
+    const fx = await makeFixture('PENDING');
+    const skuBefore = await prisma.sku.findUniqueOrThrow({ where: { id: fx.skuId } });
+    const [a, b] = await Promise.allSettled([
+      prisma.$transaction((tx) => transitionOrder(tx, fx.order.id, 'PAID', null)),
+      prisma.$transaction((tx) => transitionOrder(tx, fx.order.id, 'CANCELLED', null)),
+    ]);
+    const winners = [a, b].filter((r) => r.status === 'fulfilled').length;
+    expect(winners).toBe(1);
+    const sku = await prisma.sku.findUniqueOrThrow({ where: { id: fx.skuId } });
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: fx.order.id } });
+    if (order.status === 'CANCELLED') expect(sku.stock).toBe(skuBefore.stock + fx.qty);
+    if (order.status === 'PAID') expect(sku.stock).toBe(skuBefore.stock);
+  });
+});
+
+// ============================================================================
 // Role gate (defense-in-depth — routes also requireRole upstream)
 // ============================================================================
 

@@ -134,7 +134,18 @@ export async function transitionOrder(
       throw new AppError(ErrorCodes.INVALID_STATUS_TRANSITION, '不能將訂單回退至 PENDING', 409);
   }
 
-  await tx.order.update({ where: { id: orderId }, data: update });
+  const updated = await tx.order.updateMany({
+    where: { id: orderId, status: order.status },
+    data: update,
+  });
+  if (updated.count === 0) {
+    throw new AppError(
+      ErrorCodes.INVALID_STATUS_TRANSITION,
+      '訂單狀態已被其他 tx 變更，請重新讀取',
+      409,
+      { expected: order.status },
+    );
+  }
   await tx.orderStatusLog.create({
     data: {
       orderId: order.id,
