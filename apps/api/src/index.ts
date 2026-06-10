@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
 import { createApp } from './app.js';
+import { registerJobs } from './jobs/index.js';
 import { logger } from './lib/logger.js';
 
 // Fail fast on missing production hardening rather than silently serving
@@ -15,6 +16,8 @@ if (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'true
 
 const port = Number(process.env.API_PORT ?? 4000);
 const app = createApp();
+
+registerJobs();
 
 app.listen(port, () => {
   logger.info({ port }, 'API listening');
