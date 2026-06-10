@@ -9,5 +9,12 @@ const ROOT = resolve(import.meta.dirname, '../..');
  * Full clear+reseed is implemented in T8.2 once test isolation requirements are clear.
  */
 export async function resetAndSeed(): Promise<void> {
-  execSync('pnpm -F @app/api db:seed', { cwd: ROOT, stdio: 'pipe' });
+  try {
+    execSync('pnpm -F @app/api db:seed', { cwd: ROOT, stdio: 'pipe' });
+  } catch (e: unknown) {
+    const err = e as { stderr?: Buffer; stdout?: Buffer };
+    throw new Error(
+      `db:seed failed:\n${err.stderr?.toString() ?? ''}\n${err.stdout?.toString() ?? ''}`,
+    );
+  }
 }

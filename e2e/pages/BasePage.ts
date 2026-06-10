@@ -8,6 +8,6 @@ export class BasePage {
 
   async goto(): Promise<void> {
     await this.page.goto(this.url);
-    await this.page.waitForLoadState('networkidle');
+    await this.page.waitForLoadState('domcontentloaded');
   }
 }

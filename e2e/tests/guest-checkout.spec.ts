@@ -9,12 +9,12 @@ import { test, expect } from '../fixtures/index.js';
 const PASSWORD = 'testpass123';
 const SHIP = { name: 'E2E Test', phone: '0912345678', city: '台北市', addr: '測試路一段1號' };
 
-// Unique per run so re-runs never hit EMAIL_TAKEN.
-const email = (): string => `e2e-guest-${Date.now()}@test.local`;
+let testEmail: string;
 
 test.describe('Guest checkout', () => {
   test.beforeAll(async () => {
     await resetAndSeed(); // ensure catalog is seeded
+    testEmail = `e2e-guest-${Date.now()}@test.local`;
   });
 
   test('adds item as guest, registers, and completes order', async ({ page }) => {
@@ -43,7 +43,7 @@ test.describe('Guest checkout', () => {
     await page.getByRole('link', { name: '立即註冊' }).click();
 
     await page.waitForURL('/register');
-    await page.getByLabel('電子信箱').fill(email());
+    await page.getByLabel('電子信箱').fill(testEmail);
     await page.getByLabel(/密碼/).fill(PASSWORD);
     await page.getByRole('button', { name: '建立帳號' }).click();
 

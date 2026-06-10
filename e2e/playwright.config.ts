@@ -12,7 +12,7 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
 
   use: {
@@ -35,14 +35,19 @@ export default defineConfig({
       url: `${API_URL}/api/health`,
       reuseExistingServer: !process.env.CI,
       cwd: ROOT,
-      timeout: 60_000,
+      timeout: 120_000,
+      env: {
+        ...process.env,
+        // Prevent the 3/day/IP register rate-limit from exhausting under test retries.
+        RATE_LIMIT_REGISTER_PER_DAY_PER_IP: '100',
+      } as Record<string, string>,
     },
     {
       command: 'pnpm -F @app/web dev',
       url: WEB_URL,
       reuseExistingServer: !process.env.CI,
       cwd: ROOT,
-      timeout: 60_000,
+      timeout: 120_000,
     },
   ],
 });

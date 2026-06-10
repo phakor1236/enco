@@ -12,12 +12,10 @@ const API_URL = process.env.API_URL ?? 'http://localhost:4000';
 const PASSWORD = 'testpass123';
 const SHIP = { name: 'E2E Member', phone: '0988765432', city: '台中市', addr: '中正路二段2號' };
 
-const newEmail = (): string => `e2e-member-${Date.now()}@test.local`;
-
-let couponCode: string;
-let testEmail: string;
-
 test.describe('Member checkout with coupon', () => {
+  let couponCode: string;
+  let testEmail: string;
+
   test.beforeAll(async () => {
     await resetAndSeed();
 
@@ -40,7 +38,7 @@ test.describe('Member checkout with coupon', () => {
     await ctx.dispose();
 
     // Fresh user — avoids cart-state pollution from previous runs.
-    testEmail = newEmail();
+    testEmail = `e2e-member-${Date.now()}@test.local`;
   });
 
   test('registers, applies coupon, and completes checkout', async ({ page }) => {
