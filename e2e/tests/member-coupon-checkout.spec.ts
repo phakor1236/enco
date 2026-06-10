@@ -1,5 +1,6 @@
 import { request as playwrightRequest } from '@playwright/test';
 
+import { SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD } from '../fixtures/constants.js';
 import { resetAndSeed } from '../fixtures/db.js';
 import { test, expect } from '../fixtures/index.js';
 
@@ -23,7 +24,7 @@ test.describe('Member checkout with coupon', () => {
     const ctx = await playwrightRequest.newContext({ baseURL: API_URL });
 
     const loginRes = await ctx.post('/api/auth/login', {
-      data: { email: 'superadmin@example.com', password: 'admin1234' },
+      data: { email: SUPERADMIN_EMAIL, password: SUPERADMIN_PASSWORD },
     });
     if (!loginRes.ok()) throw new Error(`Admin login failed: ${await loginRes.text()}`);
     const { accessToken } = (await loginRes.json()) as { accessToken: string };

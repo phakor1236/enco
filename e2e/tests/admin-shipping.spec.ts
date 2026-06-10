@@ -1,5 +1,6 @@
 import { request as playwrightRequest } from '@playwright/test';
 
+import { SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD } from '../fixtures/constants.js';
 import { resetAndSeed } from '../fixtures/db.js';
 import { test, expect } from '../fixtures/index.js';
 
@@ -85,8 +86,8 @@ test.describe('Admin shipping', () => {
   }) => {
     // ── 1. Login as superadmin (isDemoReadonly=false) ─────────────────────────
     await page.goto('/login');
-    await page.getByLabel('電子信箱').fill('superadmin@example.com');
-    await page.getByLabel(/密碼/).fill('admin1234');
+    await page.getByLabel('電子信箱').fill(SUPERADMIN_EMAIL);
+    await page.getByLabel(/密碼/).fill(SUPERADMIN_PASSWORD);
     await page.getByRole('button', { name: '登入' }).click();
     await page.waitForURL('/');
 
@@ -135,7 +136,7 @@ test.describe('Admin shipping', () => {
 
     // ── 6. Verify via admin API: status + audit log (adminActionLog) ──────────
     const loginRes = await request.post(`${API_URL}/api/auth/login`, {
-      data: { email: 'superadmin@example.com', password: 'admin1234' },
+      data: { email: SUPERADMIN_EMAIL, password: SUPERADMIN_PASSWORD },
     });
     expect(loginRes.ok(), `Admin re-login failed: ${await loginRes.text()}`).toBeTruthy();
     const { accessToken } = (await loginRes.json()) as { accessToken: string };

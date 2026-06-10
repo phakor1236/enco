@@ -1,5 +1,6 @@
 import { request as playwrightRequest } from '@playwright/test';
 
+import { SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD } from '../fixtures/constants.js';
 import { resetAndSeed } from '../fixtures/db.js';
 import { test, expect } from '../fixtures/index.js';
 
@@ -91,11 +92,12 @@ test.describe('Payment failure path', () => {
     const productRes = await request.get(`${API_URL}/api/products/classic-crew-tee`);
     const product = (await productRes.json()) as { skus: { id: string; stock: number }[] };
     const sku = product.skus.find((s) => s.id === skuId);
-    expect(sku?.stock, 'SKU stock should be restored after CANCELLED').toBe(stockBefore);
+    expect(sku, 'SKU not found in product response — product shape may have changed').toBeDefined();
+    expect(sku!.stock, 'SKU stock should be restored after CANCELLED').toBe(stockBefore);
 
     // ── 5. Verify order status via admin API ──────────────────────────────────
     const loginRes = await request.post(`${API_URL}/api/auth/login`, {
-      data: { email: 'superadmin@example.com', password: 'admin1234' },
+      data: { email: SUPERADMIN_EMAIL, password: SUPERADMIN_PASSWORD },
     });
     expect(loginRes.ok(), `Admin login failed: ${await loginRes.text()}`).toBeTruthy();
     const { accessToken } = (await loginRes.json()) as { accessToken: string };
