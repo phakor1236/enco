@@ -166,8 +166,8 @@ function ReportTable({ headers, rows }: { headers: string[]; rows: string[][] })
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
-          {rows.map((row, i) => (
-            <tr key={i} className="hover:bg-paper-2">
+          {rows.map((row) => (
+            <tr key={row[0]} className="hover:bg-paper-2">
               {row.map((cell, j) => (
                 <td key={j} className="px-4 py-3">
                   {cell}

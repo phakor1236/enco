@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { AxiosError } from 'axios';
 
 import {
   useAdminCoupons,
@@ -8,6 +7,7 @@ import {
   type AdminCoupon,
 } from '../../features/admin/useAdmin.js';
 import { useAuthStore } from '../../stores/authStore.js';
+import { extractApiError } from '../../lib/apiError.js';
 
 export function AdminCouponsPage(): JSX.Element {
   const user = useAuthStore((s) => s.user);
@@ -42,22 +42,13 @@ export function AdminCouponsPage(): JSX.Element {
           setCreateError('');
         },
         onError: (err) => {
-          const msg =
-            err instanceof AxiosError
-              ? ((err.response?.data as { error?: { message?: string } })?.error?.message ??
-                '建立失敗')
-              : '建立失敗';
-          setCreateError(msg);
+          setCreateError(extractApiError(err, '建立失敗'));
         },
       },
     );
   }
 
   function handleDelete(coupon: AdminCoupon) {
-    if (!isSuperAdmin) {
-      window.alert('僅限超級管理員刪除優惠券');
-      return;
-    }
     if (!window.confirm(`確定要刪除優惠券「${coupon.code}」？此操作無法復原。`)) return;
     deleteCoupon.mutate(coupon.id);
   }

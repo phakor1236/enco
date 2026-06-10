@@ -7,6 +7,8 @@ import {
   useRefundOrder,
   type OrderStatus,
 } from '../../features/admin/useAdmin.js';
+import { extractApiError } from '../../lib/apiError.js';
+import { useCartUiStore } from '../../stores/cartUiStore.js';
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING: '待付款',
@@ -37,16 +39,23 @@ export function AdminOrdersPage(): JSX.Element {
   const { data, isLoading } = useAdminOrders(page, statusFilter || undefined);
   const ship = useShipOrder();
   const refund = useRefundOrder();
+  const pushToast = useCartUiStore((s) => s.pushToast);
 
   function handleShip(orderId: string) {
     const carrier = window.prompt('承運商（可留空）') ?? undefined;
     const trackingNo = window.prompt('追蹤號（可留空）') ?? undefined;
-    ship.mutate({ orderId, carrier: carrier || undefined, trackingNo: trackingNo || undefined });
+    ship.mutate(
+      { orderId, carrier: carrier || undefined, trackingNo: trackingNo || undefined },
+      { onError: (err) => pushToast('error', extractApiError(err, '出貨失敗')) },
+    );
   }
 
   function handleRefund(orderId: string) {
     if (!window.confirm('確定要退款此訂單？')) return;
-    refund.mutate({ orderId });
+    refund.mutate(
+      { orderId },
+      { onError: (err) => pushToast('error', extractApiError(err, '退款失敗')) },
+    );
   }
 
   return (

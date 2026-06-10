@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { AxiosError } from 'axios';
 
 import {
   useAdminProducts,
@@ -8,6 +7,7 @@ import {
   useArchiveProduct,
   type AdminProduct,
 } from '../../features/admin/useAdmin.js';
+import { extractApiError } from '../../lib/apiError.js';
 
 export function AdminProductsPage(): JSX.Element {
   const { data, isLoading } = useAdminProducts();
@@ -16,7 +16,6 @@ export function AdminProductsPage(): JSX.Element {
   const archiveProduct = useArchiveProduct();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [createError, setCreateError] = useState('');
 
   function handleCreate(e: React.FormEvent<HTMLFormElement>) {
@@ -35,12 +34,7 @@ export function AdminProductsPage(): JSX.Element {
       {
         onSuccess: () => setShowCreateForm(false),
         onError: (err) => {
-          const msg =
-            err instanceof AxiosError
-              ? ((err.response?.data as { error?: { message?: string } })?.error?.message ??
-                '建立失敗')
-              : '建立失敗';
-          setCreateError(msg);
+          setCreateError(extractApiError(err, '建立失敗'));
         },
       },
     );
@@ -49,7 +43,6 @@ export function AdminProductsPage(): JSX.Element {
   function handleStatusToggle(product: AdminProduct) {
     const newStatus = product.status === 'ACTIVE' ? 'DRAFT' : 'ACTIVE';
     updateProduct.mutate({ id: product.id, data: { status: newStatus } });
-    setEditingId(null);
   }
 
   function handleArchive(product: AdminProduct) {
@@ -197,7 +190,6 @@ export function AdminProductsPage(): JSX.Element {
           </table>
         </div>
       )}
-      {editingId && <span className="sr-only">{editingId}</span>}
     </div>
   );
 }
