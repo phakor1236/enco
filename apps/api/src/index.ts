@@ -17,8 +17,14 @@ if (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'true
 const port = Number(process.env.API_PORT ?? 4000);
 const app = createApp();
 
-registerJobs();
+const cronTasks = registerJobs();
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   logger.info({ port }, 'API listening');
+});
+
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received — stopping cron jobs and closing server');
+  for (const task of cronTasks) task.stop();
+  server.close(() => process.exit(0));
 });
