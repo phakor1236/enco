@@ -16,6 +16,8 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
+    "test:e2e": "pnpm -F @app/e2e test",
+    "test:e2e:ui": "pnpm -F @app/e2e test:ui",
     "db:generate": "pnpm -F @app/api db:generate",
     "db:migrate": "pnpm -F @app/api db:migrate",
     "db:migrate:dev": "pnpm -F @app/api db:migrate:dev",
