@@ -63,12 +63,17 @@ test.describe('Admin shipping', () => {
     orderId = ((await checkoutRes.json()) as { orderId: string }).orderId;
 
     // ── 5. Poll until PAID (payment mock fires 200–500 ms after response) ────
+    let finalStatus = 'PENDING';
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 400));
       const orderRes = await ctx.get(`/api/orders/${orderId}`, { headers: auth });
       if (!orderRes.ok()) break;
       const order = (await orderRes.json()) as { status: string };
-      if (order.status === 'PAID') break;
+      finalStatus = order.status;
+      if (finalStatus === 'PAID') break;
+    }
+    if (finalStatus !== 'PAID') {
+      throw new Error(`Order ${orderId} never reached PAID (last status: ${finalStatus})`);
     }
 
     await ctx.dispose();
@@ -97,11 +102,17 @@ test.describe('Admin shipping', () => {
     await expect(orderRow.getByText('已付款')).toBeVisible();
 
     // ── 4. Ship — mock window.prompt so dialogs resolve synchronously without
-    //       CDP round-trips; the mutation still receives carrier + trackingNo.
+    //       CDP round-trips; restores original after 2 calls to avoid leaking
+    //       into retries or future tests on the same page.
     await page.evaluate(
       ([carrier, tracking]) => {
+        const orig = window.prompt;
         let calls = 0;
-        window.prompt = () => (++calls === 1 ? carrier : tracking);
+        window.prompt = () => {
+          const val = ++calls === 1 ? carrier : tracking;
+          if (calls >= 2) window.prompt = orig;
+          return val;
+        };
       },
       [CARRIER, TRACKING],
     );
@@ -126,6 +137,7 @@ test.describe('Admin shipping', () => {
     const loginRes = await request.post(`${API_URL}/api/auth/login`, {
       data: { email: 'superadmin@example.com', password: 'admin1234' },
     });
+    expect(loginRes.ok(), `Admin re-login failed: ${await loginRes.text()}`).toBeTruthy();
     const { accessToken } = (await loginRes.json()) as { accessToken: string };
 
     const orderRes = await request.get(`${API_URL}/api/admin/orders/${orderId}`, {
