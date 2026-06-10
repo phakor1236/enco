@@ -11,7 +11,8 @@ type E2EFixtures = {
 
 export const test = base.extend<E2EFixtures>({
   resetAndSeed: [
-    async (_fixtures, use) => {
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use) => {
       await resetAndSeed();
       await use();
     },
