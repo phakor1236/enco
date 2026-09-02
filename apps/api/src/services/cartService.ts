@@ -75,20 +75,31 @@ export async function addItem(db: DbClient, owner: CartOwner, input: AddInput): 
   // Atomic increment-or-create with stock post-check. Two parallel add-N calls
   // both bump qty via `increment` (no read-then-write race that loses one add);
   // exceeding stock throws inside the tx so the increment rolls back.
+  //
+  // INVARIANT: this upsert must stay eligible for Prisma's native
+  // `INSERT ... ON CONFLICT DO UPDATE`. Attaching a nested read (an `include`)
+  // disqualifies it, and Prisma silently falls back to SELECT-then-write —
+  // which is NOT atomic: two concurrent adds both miss the row, both INSERT,
+  // and the loser dies on the (cart_id, sku_id) unique index with P2002,
+  // dropping one add entirely. That is why stock is re-read separately below
+  // instead of being pulled in via `include`.
   const work = async (tx: DbClient): Promise<void> => {
     const after = await tx.cartItem.upsert({
       where: { cartId_skuId: { cartId: cart.id, skuId: sku.id } },
       update: { qty: { increment: input.qty } },
       create: { cartId: cart.id, skuId: sku.id, qty: input.qty },
-      include: { sku: { select: { stock: true } } },
     });
-    if (after.qty > after.sku.stock) {
-      throw new AppError(
-        ErrorCodes.OUT_OF_STOCK,
-        `庫存不足:此 SKU 目前僅剩 ${after.sku.stock} 件`,
-        409,
-        { available: after.sku.stock, requested: after.qty },
-      );
+    // Read inside the tx rather than trusting the pre-tx `loadActiveSku`
+    // snapshot: stock may have moved between that read and this write.
+    const { stock } = await tx.sku.findUniqueOrThrow({
+      where: { id: sku.id },
+      select: { stock: true },
+    });
+    if (after.qty > stock) {
+      throw new AppError(ErrorCodes.OUT_OF_STOCK, `庫存不足:此 SKU 目前僅剩 ${stock} 件`, 409, {
+        available: stock,
+        requested: after.qty,
+      });
     }
   };
 
