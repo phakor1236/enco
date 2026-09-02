@@ -4,6 +4,22 @@
 金流／物流／發票是刻意 mock 的，但金流**周圍**的東西——並發控制、狀態機、
 認證、冪等性、稽核紀錄——都照生產標準實作。
 
+---
+
+## 關於這個 repo 的產出方式（先說清楚）
+
+這個專案的程式碼**主要由我與 Claude Code 協作產出**。我的角色是 director：
+決定要做什麼、在每個選擇點從 2-3 個方案中拍板、review 產出並要求修正 ——
+`docs/adr/` 裡的 8 篇決策記錄就是這樣長出來的。
+
+**逐行的實作大部分不是我手寫的，我不會宣稱它是。**
+
+我把它當學習教材：讀懂它、拆解它，再把核心邏輯挖出來自己重寫一遍。
+我給自己的規矩是「講不出來的碼不算我的」——所以這個 repo 我當學習紀錄放著，
+不當作品集用。
+
+---
+
 **技術棧：** Node.js 22 · Express 5 · TypeScript · Prisma 6 · PostgreSQL 16 ·
 React 18 + Vite · Zod · Docker Compose · GitHub Actions · Vitest / Supertest / Playwright
 
