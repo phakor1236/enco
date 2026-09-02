@@ -1,274 +1,264 @@
-# Vella — B2C E-commerce Platform
+# Vella — B2C 電商平台
 
-A single-seller e-commerce platform built end-to-end: storefront, checkout,
-admin back office, background jobs, and API docs. Payment / shipping / invoicing
-are mocked on purpose — everything _around_ them (concurrency, state machines,
-auth, idempotency, auditing) is built for real.
+單一賣家的 B2C 電商平台，前台、結帳、後台管理、排程任務、API 文件都做完整。
+金流／物流／發票是刻意 mock 的，但金流**周圍**的東西——並發控制、狀態機、
+認證、冪等性、稽核紀錄——都照生產標準實作。
 
-**Stack:** Node.js 22 · Express 5 · TypeScript · Prisma 6 · PostgreSQL 16 ·
+**技術棧：** Node.js 22 · Express 5 · TypeScript · Prisma 6 · PostgreSQL 16 ·
 React 18 + Vite · Zod · Docker Compose · GitHub Actions · Vitest / Supertest / Playwright
 
-**298 tests** (237 API · 39 web · 17 shared · 5 E2E) · **8 ADRs** · **OpenAPI 3 docs auto-generated from Zod**
+**298 個測試**（API 237 · 前端 39 · shared 17 · E2E 5）· **8 篇 ADR** ·
+**OpenAPI 3 文件從 Zod schema 自動生成**
 
 ---
 
-## Quick start (one command for the database)
+## 快速開始（資料庫一行指令）
 
-Prereqs: Node ≥ 22.13, pnpm ≥ 11, Docker.
+環境需求：Node ≥ 22.13、pnpm ≥ 11、Docker。
 
 ```bash
-docker compose up -d               # Postgres 16 + a separate test DB, healthchecked
+docker compose up -d               # Postgres 16 + 獨立測試資料庫，附 healthcheck
 pnpm install
 cp apps/api/.env.example apps/api/.env
-pnpm db:migrate                    # 9 Prisma migrations
-pnpm db:seed                       # demo products + accounts
-pnpm dev                           # API :4000 · web :5173
+pnpm db:migrate                    # 9 次 Prisma migration
+pnpm db:seed                       # 種子商品與 demo 帳號
+pnpm dev                           # API :4000 · 前端 :5173
 ```
 
-| Demo account        | Password    | Role     |
+| Demo 帳號           | 密碼        | 角色     |
 | ------------------- | ----------- | -------- |
-| `demo@example.com`  | `demo1234`  | customer |
-| `admin@example.com` | `admin1234` | admin    |
+| `demo@example.com`  | `demo1234`  | 一般會員 |
+| `admin@example.com` | `admin1234` | 管理員   |
 
-API docs (Swagger UI): <http://localhost:4000/api/docs> · raw spec: `/api/docs.json`
+API 文件（Swagger UI）：<http://localhost:4000/api/docs> · 原始 spec：`/api/docs.json`
 
 ```bash
-pnpm test         # Vitest + Supertest (integration tests hit real Postgres)
-pnpm test:e2e     # Playwright — 5 browser flows
+pnpm test         # Vitest + Supertest（整合測試打真的 Postgres）
+pnpm test:e2e     # Playwright — 5 條瀏覽器流程
 pnpm lint && pnpm typecheck
 ```
 
 ---
 
-## Architecture
+## 架構
 
 ```
                  ┌──────────────────────────────────────┐
-  browser ─────▶ │ apps/web — React 18 + Vite           │
-                 │ Zustand (client) · TanStack Query    │
-                 │ Axios + single-flight silent refresh │
+  瀏覽器 ───────▶ │ apps/web — React 18 + Vite           │
+                 │ Zustand（前端狀態）· TanStack Query   │
+                 │ Axios + single-flight 靜默續期        │
                  └───────────────┬──────────────────────┘
-                                 │  /api/*  (Vite proxy in dev)
+                                 │  /api/*（開發時走 Vite proxy）
                  ┌───────────────▼──────────────────────┐
                  │ apps/api — Express 5                 │
-                 │  routes/    thin: Zod validate       │
-                 │  services/  all business logic       │
+                 │  routes/    很薄，只做 Zod 驗證        │
+                 │  services/  所有商業邏輯              │
                  │  middleware auth · error · validate  │
                  │  jobs/      node-cron + advisory lock│
                  └───────────────┬──────────────────────┘
                                  │  Prisma 6
                  ┌───────────────▼──────────────────────┐
-                 │ PostgreSQL 16 (Docker)               │
-                 │ app DB + isolated test DB            │
+                 │ PostgreSQL 16（Docker）              │
+                 │ 應用資料庫 + 獨立測試資料庫            │
                  └──────────────────────────────────────┘
 
-  packages/shared — Zod schemas + error codes + types, imported by BOTH sides
+  packages/shared — Zod schema、錯誤碼、型別，前後端共用同一份
 ```
 
-Routes are deliberately thin. A handler validates with Zod, calls one service
-function, and maps errors — every rule that matters lives in `apps/api/src/services/`
-where it can be tested without HTTP.
+route 層刻意寫得很薄：驗證 → 呼叫一個 service → 回傳並映射錯誤。所有**真正的規則
+都住在 `apps/api/src/services/`**，因此測試不必經過 HTTP 就能驗證商業邏輯。
 
 ### REST API
 
-| Area     | Endpoints                                                                  |
-| -------- | -------------------------------------------------------------------------- |
-| Auth     | `POST /api/auth/{register,login,refresh,logout}`                           |
-| Catalog  | `GET /api/categories`, `GET /api/products`, `GET /api/products/:slug`      |
-| Cart     | `GET/POST/PATCH/DELETE /api/cart` (guest cart via cookie, merged on login) |
-| Checkout | `POST /api/checkout`, `POST /api/coupons/validate`                         |
-| Orders   | `GET /api/orders`, `GET /api/orders/:id`                                   |
-| Webhooks | `POST /api/webhooks/payment/mock` (idempotent)                             |
-| Admin    | `/api/admin/{products,skus,orders,coupons,reports}` — `requireRole` gated  |
+| 範圍    | Endpoints                                                                  |
+| ------- | -------------------------------------------------------------------------- |
+| 認證    | `POST /api/auth/{register,login,refresh,logout}`                           |
+| 商品    | `GET /api/categories`、`GET /api/products`、`GET /api/products/:slug`      |
+| 購物車  | `GET/POST/PATCH/DELETE /api/cart`（訪客購物車走 cookie，登入時合併）       |
+| 結帳    | `POST /api/checkout`、`POST /api/coupons/validate`                         |
+| 訂單    | `GET /api/orders`、`GET /api/orders/:id`                                   |
+| Webhook | `POST /api/webhooks/payment/mock`（冪等）                                  |
+| 後台    | `/api/admin/{products,skus,orders,coupons,reports}` — 需通過 `requireRole` |
 
 ---
 
-## The parts worth reading
+## 值得一讀的部分
 
-### 1. Oversell prevention — conditional UPDATE, not `SELECT FOR UPDATE`
+### 1. 防超賣 — 用 conditional UPDATE，不用 `SELECT FOR UPDATE`
 
-Two customers buy the last unit at the same instant. The naive read-check-write
-lets both through. Checkout instead never reads-then-writes:
+兩個人同時買最後一件。天真的「先讀再檢查再寫」會讓兩單都通過。
+結帳這裡**根本不先讀**：
 
 ```ts
 const updated = await tx.sku.updateMany({
-  where: { id: item.skuId, stock: { gte: item.qty } },   // guard is IN the write
+  where: { id: item.skuId, stock: { gte: item.qty } },   // 條件寫進 UPDATE 裡
   data:  { stock: { decrement: item.qty } },
 });
 if (updated.count === 0) throw new AppError(ErrorCodes.OUT_OF_STOCK, ...);
 ```
 
-The `WHERE` clause and the decrement are one atomic statement, so the database
-itself is the arbiter — no explicit lock, no lock-ordering deadlock, and
-`count === 0` _is_ the out-of-stock signal. The whole checkout runs in one
-transaction, so a failure on line 3 of 5 rolls back lines 1–2; stock is never
-left partially decremented. The decrements run sequentially rather than via
-`Promise.all` — parallel writes sharing one transaction connection can deadlock
-on overlapping rows, and a cart is small enough that the sequential cost is noise.
+`WHERE` 條件與扣減是同一個原子語句，**由資料庫本身仲裁**——不需要顯式加鎖，
+就沒有鎖順序造成的 deadlock，而 `count === 0` 本身就是庫存不足的訊號。
+
+整個結帳包在單一 transaction 裡，所以第 3 個品項扣失敗時，前 2 個會一起 rollback，
+不會留下扣一半的庫存。扣減採**循序執行**而非 `Promise.all`——共用同一條交易連線的
+平行寫入在重疊資料列上可能 deadlock，而購物車的品項數量小到讓循序成本可忽略。
 → [ADR 0003](docs/adr/0003-conditional-update-over-select-for-update.md)
 
-### 2. Order state machine — one door in, side effects included
+### 2. 訂單狀態機 — 單一入口，side effect 一起進交易
 
-Order status transitions live in a single `transitionOrder()` function backed by
-an explicit allow-table:
+訂單狀態轉換全部走同一個 `transitionOrder()`，背後是一張明確的允許表：
 
 ```
 PENDING ──▶ PAID ──▶ SHIPPED ──▶ COMPLETED
    │          │         │
-   │          └──▶ REFUNDED (restock)
-   └──▶ CANCELLED (restock)
+   │          └──▶ REFUNDED（回補庫存）
+   └──▶ CANCELLED（回補庫存）
 ```
 
-Anything outside the table throws `409 INVALID_STATUS_TRANSITION`. Crucially the
-status change, the `OrderStatusLog` row, and the side effects (restock,
-shipment mock, audit log) all happen **inside the same transaction** — you can
-never end up with an order marked CANCELLED whose stock was not returned.
+不在表上的轉換一律丟 `409 INVALID_STATUS_TRANSITION`。關鍵在於：狀態變更、
+`OrderStatusLog` 歷史紀錄、以及 side effect（回補庫存、建立出貨 mock、寫稽核 log）
+**全部在同一個 transaction 內**——不可能出現「訂單標成已取消、庫存卻沒還回去」。
 → [ADR 0005](docs/adr/0005-centralized-transition-order-state-machine.md)
 
-### 3. Auth — in-memory access token + rotating refresh family
+### 3. 認證 — 記憶體 access token + 會輪替的 refresh token family
 
-- **Access token:** JWT, 15 min, HS256 with the algorithm explicitly whitelisted
-  on verify (blocks alg-confusion), kept in memory only — never in `localStorage`.
-- **Refresh token:** opaque 256-bit random, sent as an `httpOnly` cookie scoped
-  to `/api/auth`. The database stores **only a SHA-256 hash** — a database dump
-  does not hand over live sessions.
-- **Rotation + reuse detection:** every refresh revokes the old token and issues
-  a new one linked by `parentId`. If an already-revoked token is presented, it's
-  either a stolen token being replayed → **the entire token family is revoked**,
-  or a legitimate network retry within a 10-second grace window → served, so a
-  flaky connection doesn't log the user out. Families are per-device, so a
-  compromise on one device doesn't sign you out everywhere.
-- **Races:** rotation uses a conditional `updateMany(where revokedAt: null)` as an
-  optimistic lock; a concurrent rotation gets `409 TOKEN_RACED` instead of two
-  valid token pairs. The frontend answers with a single-flight refresh queue.
-- Login runs bcrypt against a dummy hash when the email doesn't exist, so
-  response timing can't be used to enumerate registered users.
+- **Access token：** JWT，15 分鐘，HS256 且在驗證時**明確白名單演算法**
+  （擋 alg-confusion 攻擊）；只放記憶體，**不放 `localStorage`**。
+- **Refresh token：** 256 bit 不透明隨機字串，以 `httpOnly` cookie 傳遞、
+  scope 限定 `/api/auth`。資料庫**只存 SHA-256 hash**——資料庫被 dump 也拿不到
+  可用的 session。
+- **輪替與重放偵測：** 每次續期都作廢舊 token、發新的，並以 `parentId` 串成鏈。
+  若有人拿已作廢的 token 來換：可能是被竊 token 的重放 → **整條 token family
+  全部撤銷**；也可能是使用者網路重試 → 10 秒 grace window 內照常發放，
+  避免網路一抖就把人登出。family 以裝置為單位，單一裝置被攻陷不會把所有裝置踢出。
+- **競態處理：** 輪替用條件式 `updateMany(where revokedAt: null)` 當樂觀鎖；
+  並發續期會拿到 `409 TOKEN_RACED`，而不是產生兩組都有效的 token。
+  前端則以 single-flight 佇列對應。
+- 登入時若 email 不存在，仍然對一組 dummy hash 跑一次 bcrypt，
+  **讓回應時間無法用來列舉已註冊帳號**。
   → [ADR 0004](docs/adr/0004-auth-access-token-refresh-cookie.md)
 
-### 4. Test isolation — every integration test rolls back
+### 4. 測試隔離 — 每個整合測試都會 rollback
 
-Integration tests run against a **real Postgres**, not a mock, inside a
-transaction that is always rolled back:
+整合測試打**真的 PostgreSQL**（不是 mock），並包在一個保證回滾的 transaction 裡：
 
 ```ts
 await withTestTx(async (tx) => {
-  /* insert, call service, assert */
-}); // ← everything written above is gone
+  /* 寫入資料、呼叫 service、斷言 */
+}); // ← 上面寫的東西，出了這行全部消失
 ```
 
-No test can pollute another, the suite is order-independent, and there is no
-truncate-between-tests slowdown. Test and app databases are separate, so
-`pnpm dev` and `pnpm test` can run at the same time.
+測試之間不可能互相污染、執行順序無關，也不需要每次 truncate 整個資料庫。
+測試資料庫與開發資料庫是分開的，所以 `pnpm dev` 和 `pnpm test` 可以同時跑。
 
-### 5. Background jobs — same process, guarded by an advisory lock
+### 5. 排程任務 — 同進程執行，用 advisory lock 保護
 
-Five `node-cron` jobs (cancel timed-out orders, auto-complete shipped orders,
-clean up refresh tokens and stale guest carts, reset the demo DB). Running them
-in the API process is the right call at this scale, but the moment you run two
-instances they double-fire — so each job wraps its body in a Postgres
-**advisory lock**, making duplicate execution impossible without adding Redis or
-a separate worker service. → [ADR 0006](docs/adr/0006-node-cron-same-process-with-advisory-lock.md)
+五個 `node-cron` 任務（取消逾時未付款訂單、自動完成已出貨訂單、清理過期 refresh
+token 與殭屍訪客購物車、重置 demo 資料庫）。以這個規模，跑在 API 同一個進程裡是
+合理的選擇，但**只要開到兩個 instance 就會重複觸發**——所以每個任務都包在
+PostgreSQL **advisory lock** 裡，不必引入 Redis 或獨立 worker 服務就能杜絕重複執行。
+→ [ADR 0006](docs/adr/0006-node-cron-same-process-with-advisory-lock.md)
 
-### 6. Docs that can't drift
+### 6. 不會 drift 的 API 文件
 
-OpenAPI 3 is generated from the same Zod schemas used to validate requests at
-runtime, and a test fails the build if the committed `docs/api/openapi.yaml`
-drifts from what the code produces. → [ADR 0007](docs/adr/0007-zod-to-openapi-auto-generated-docs.md)
+OpenAPI 3 文件由「執行期實際用來驗證請求的那份 Zod schema」生成，而且有一個測試會
+在 commit 進版控的 `docs/api/openapi.yaml` 與程式碼產出不一致時直接讓 build 失敗。
+→ [ADR 0007](docs/adr/0007-zod-to-openapi-auto-generated-docs.md)
 
 ---
 
-## Security checklist
+## 安全檢核
 
-| Concern               | Handling                                                           |
-| --------------------- | ------------------------------------------------------------------ |
-| Password storage      | bcrypt, cost 12                                                    |
-| Refresh token storage | SHA-256 hash only; plaintext returned once                         |
-| XSS → token theft     | access token in memory; refresh in `httpOnly` cookie               |
-| Brute force           | rate limit: login 5/min/IP, register 3/day/IP                      |
-| User enumeration      | dummy-hash compare on unknown email                                |
-| Header hardening      | `helmet`, `x-powered-by` disabled                                  |
-| Log leakage           | pino redacts `cookie` / `authorization` / `set-cookie`             |
-| Privilege escalation  | `requireAuth` + `requireRole`; admin writes go to `AdminActionLog` |
-| Body size             | `express.json({ limit: '1mb' })`                                   |
-| Prod docs exposure    | Swagger UI off in production unless `EXPOSE_API_DOCS=true`         |
+| 風險               | 處理方式                                                         |
+| ------------------ | ---------------------------------------------------------------- |
+| 密碼儲存           | bcrypt，cost 12                                                  |
+| Refresh token 儲存 | 僅存 SHA-256 hash；明文只回傳一次                                |
+| XSS 竊取 token     | access token 只在記憶體；refresh 走 `httpOnly` cookie            |
+| 暴力破解           | rate limit：登入 5 次/分鐘/IP、註冊 3 次/天/IP                   |
+| 帳號列舉           | 對不存在的 email 仍執行 dummy hash 比對                          |
+| HTTP header 強化   | `helmet`、關閉 `x-powered-by`                                    |
+| Log 外洩           | pino 遮蔽 `cookie` / `authorization` / `set-cookie`              |
+| 權限提升           | `requireAuth` + `requireRole`；後台寫入一律寫進 `AdminActionLog` |
+| 請求體積           | `express.json({ limit: '1mb' })`                                 |
+| 生產環境文件外露   | 生產環境預設關閉 Swagger UI，除非 `EXPOSE_API_DOCS=true`         |
 
 ---
 
-## Architecture decision records
+## 架構決策記錄（ADR）
 
-Every non-obvious choice is written down with the options rejected and why:
+每個非顯而易見的選擇都寫下來，包含**被否決的選項與理由**：
 
-| ADR                                                                 | Decision                                        |
-| ------------------------------------------------------------------- | ----------------------------------------------- |
-| [0001](docs/adr/0001-express-over-nest-fastify.md)                  | Express 5 over NestJS / Fastify                 |
-| [0002](docs/adr/0002-pnpm-workspaces-monorepo.md)                   | pnpm workspaces, no build orchestrator          |
-| [0003](docs/adr/0003-conditional-update-over-select-for-update.md)  | Conditional UPDATE for oversell prevention      |
-| [0004](docs/adr/0004-auth-access-token-refresh-cookie.md)           | Access token + refresh cookie + family rotation |
-| [0005](docs/adr/0005-centralized-transition-order-state-machine.md) | Centralized order state machine                 |
-| [0006](docs/adr/0006-node-cron-same-process-with-advisory-lock.md)  | node-cron in-process + advisory lock            |
-| [0007](docs/adr/0007-zod-to-openapi-auto-generated-docs.md)         | OpenAPI generated from Zod                      |
-| [0008](docs/adr/0008-sku-option-combination-denormalized-json.md)   | SKU option combination denormalized as JSONB    |
+| ADR                                                                 | 決策                                        |
+| ------------------------------------------------------------------- | ------------------------------------------- |
+| [0001](docs/adr/0001-express-over-nest-fastify.md)                  | 選 Express 5，不選 NestJS / Fastify         |
+| [0002](docs/adr/0002-pnpm-workspaces-monorepo.md)                   | pnpm workspaces，不引入 build orchestrator  |
+| [0003](docs/adr/0003-conditional-update-over-select-for-update.md)  | 用 conditional UPDATE 防超賣                |
+| [0004](docs/adr/0004-auth-access-token-refresh-cookie.md)           | access token + refresh cookie + family 輪替 |
+| [0005](docs/adr/0005-centralized-transition-order-state-machine.md) | 集中式訂單狀態機                            |
+| [0006](docs/adr/0006-node-cron-same-process-with-advisory-lock.md)  | node-cron 同進程 + advisory lock            |
+| [0007](docs/adr/0007-zod-to-openapi-auto-generated-docs.md)         | OpenAPI 由 Zod 生成                         |
+| [0008](docs/adr/0008-sku-option-combination-denormalized-json.md)   | SKU 選項組合以 JSONB 反正規化               |
 
-Full requirements spec: [`SPEC.md`](SPEC.md).
+完整需求規格：[`SPEC.md`](SPEC.md)。
 
 ---
 
 ## CI
 
-GitHub Actions runs four parallel jobs on every push and PR — **lint**,
-**typecheck**, **test** (with a real Postgres 16 service container, migrations
-applied first), and **build**. A husky `pre-commit` hook runs lint-staged so
-formatting never reaches CI.
+GitHub Actions 在每次 push 與 PR 跑四個平行 job — **lint**、**typecheck**、
+**test**（掛真的 Postgres 16 service container，先跑 migration）、**build**。
+另有 husky `pre-commit` hook 跑 lint-staged，格式問題不會流到 CI。
 
-The Playwright suite is deliberately **not** in the `test` job: it needs both
-servers running and a browser download, so it is run locally via `pnpm test:e2e`
-(after `pnpm exec playwright install`) rather than slowing every push.
+Playwright 測試**刻意不放進 `test` job**：它需要前後端都跑起來、還要下載瀏覽器，
+所以改為本機執行 `pnpm test:e2e`（先跑 `pnpm exec playwright install`），
+不拖慢每一次 push。
 
 ---
 
-## Data model
+## 資料模型
 
-26 Prisma models / enums across 9 migrations, one migration per concern:
+9 次 migration、26 個 Prisma model／enum，一次 migration 只處理一個主題：
 
 ```
-User · RefreshToken                        auth
+User · RefreshToken                        認證
 Category · Product · ProductImage
-  · Variant · VariantOption · Sku          catalog (multi-SKU products)
-Cart · CartItem                            guest + member carts
-Order · OrderItem · OrderStatusLog         orders (append-only status history)
-PaymentMock · ShipmentMock                 mocked external services
-Coupon · CouponUsage                       discounts (per-user usage cap)
-AdminActionLog                             audit trail for every admin write
+  · Variant · VariantOption · Sku          商品（多 SKU）
+Cart · CartItem                            訪客與會員購物車
+Order · OrderItem · OrderStatusLog         訂單（狀態歷史為 append-only）
+PaymentMock · ShipmentMock                 模擬的外部服務
+Coupon · CouponUsage                       折價券（含每人使用上限）
+AdminActionLog                             後台寫入的稽核軌跡
 ```
 
-Order items snapshot the product name and price at purchase time — later catalog
-edits must never rewrite historical orders.
+`OrderItem` 會**快照購買當下的商品名稱與價格**——之後改價改名，
+絕不能回頭改寫歷史訂單。
 
 ---
 
-## Project layout
+## 專案結構
 
 ```
 apps/api/         Express 5 API
-  src/routes/     12 route modules (thin: validate → service → respond)
-  src/services/   9 services — auth, cart, checkout, order, coupon, payment,
-                  product, report, auditLog
-  src/jobs/       5 cron jobs + advisory-lock helper
-  src/middleware/ auth (requireAuth/requireRole) · validate · error
-  prisma/         schema + 9 migrations + seed
-  tests/          237 tests, integration tests on real Postgres
-apps/web/         React 18 + Vite storefront and admin back office
-packages/shared/  Zod schemas, error codes, types — shared by FE and BE
-e2e/              Playwright: guest checkout, member+coupon checkout,
-                  admin shipping, payment failure + stock restore, smoke
-docs/adr/         8 architecture decision records
-docs/api/         generated openapi.yaml (drift-tested)
+  src/routes/     12 個 route 模組（很薄：驗證 → service → 回傳）
+  src/services/   9 個 service — auth, cart, checkout, order, coupon,
+                  payment, product, report, auditLog
+  src/jobs/       5 個 cron 任務 + advisory lock helper
+  src/middleware/ auth（requireAuth / requireRole）· validate · error
+  prisma/         schema + 9 次 migration + seed
+  tests/          237 個測試，整合測試打真的 Postgres
+apps/web/         React 18 + Vite 前台與後台
+packages/shared/  Zod schema、錯誤碼、型別 — 前後端共用
+e2e/              Playwright：訪客結帳、會員含折價券結帳、
+                  後台出貨、付款失敗與庫存回補、smoke
+docs/adr/         8 篇架構決策記錄
+docs/api/         生成的 openapi.yaml（有 drift 測試把關）
 ```
 
 ---
 
-## Status
+## 進度
 
-Core commerce flow, admin back office, background jobs, E2E suite, and CI are
-done. Public deployment (Vercel + Fly.io) is the remaining step — the
-`docker compose` path above runs the whole system locally today.
+核心購物流程、後台管理、排程任務、E2E 測試套件與 CI 都已完成。
+**公開部署（Vercel + Fly.io）是最後一步**——目前上面的 `docker compose` 路徑
+已可在本機完整跑起整套系統。
