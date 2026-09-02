@@ -220,6 +220,10 @@ GitHub Actions runs four parallel jobs on every push and PR — **lint**,
 applied first), and **build**. A husky `pre-commit` hook runs lint-staged so
 formatting never reaches CI.
 
+The Playwright suite is deliberately **not** in the `test` job: it needs both
+servers running and a browser download, so it is run locally via `pnpm test:e2e`
+(after `pnpm exec playwright install`) rather than slowing every push.
+
 ---
 
 ## Data model

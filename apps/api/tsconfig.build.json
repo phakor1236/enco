@@ -2,8 +2,11 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    "rootDir": "./src"
+    // rootDir is the package root, not ./src: `jobs/resetDemoDb.ts` dynamically
+    // imports the catalog seeder from ./prisma/seed, so the emitted tree keeps
+    // both directories and their relative import stays valid in dist/.
+    "rootDir": "."
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "prisma/seed/**/*"],
   "exclude": ["tests/**/*"]
 }
